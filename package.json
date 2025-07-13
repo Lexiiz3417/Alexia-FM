@@ -1,5 +1,5 @@
 {
-  "name": "spotify-facebook-autoposter-v2",
+  "name": "alexia-fm",
   "version": "1.0.0",
   "type": "module",
   "description": "",
@@ -11,8 +11,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@discordjs/rest": "^2.5.1",
+    "@replit/database": "^3.0.1",
+    "discord-api-types": "^0.38.15",
     "discord.js": "^14.21.0",
     "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2"
   }
 }

@@ -1,112 +1,80 @@
-# 🎶 Spotify Facebook Autoposter v2
+# 📻 Alexia FM
 
-> Otomatis ambil lagu dari playlist Spotify, buat caption estetik, dan post ke Facebook Page setiap hari. ✨
+![Node.js](https://img.shields.io/badge/Node.js-18.x-339933?style=for-the-badge&logo=node.js)
+![Discord.js](https://img.shields.io/badge/Discord.js-v14-5865F2?style=for-the-badge&logo=discord&logoColor=white)
+![Spotify](https://img.shields.io/badge/Spotify_API-111B24?style=for-the-badge&logo=spotify&logoColor=1DB954)
 
----
+**Breaking the cycle of songs on repeat. Your personal, automated music curator for Discord and beyond.**
 
-## 🚀 Fitur
-- Ambil lagu secara acak dari playlist Spotify
-- Dapatkan genre artis dan buat caption berdasarkan mood
-- Konversi link Spotify ke link universal (via Songlink)
-- Upload cover lagu + caption ke Facebook Page (langsung muncul di timeline!)
-- Auto-komentar follow-up di setiap post
-- Jadwal otomatis via GitHub Actions (atau manual trigger)
+Alexia FM is a sophisticated bot designed to breathe new life into your community's music discovery experience. It automatically shares a random track from a designated Spotify playlist every day and offers interactive commands to get song recommendations on demand.
 
 ---
 
-## 🗂️ Struktur Project
-```
-spotify-facebook-autoposter-v2/
-├── captions/
-│   └── default.txt          # Template caption (pakai {title}, {artist}, dst)
-├── src/
-│   ├── index.js             # Main script
-│   ├── spotify.js           # Ambil data dari Spotify
-│   ├── songlink.js          # Konversi URL Spotify ke universal
-│   ├── caption.js           # Generate caption dari template
-│   └── facebook.js          # Posting ke Facebook
-├── .github/workflows/
-│   └── autopost.yml         # Workflow GitHub Actions
-├── .env.example             # Template variabel rahasia
-├── .gitignore               # Ignore .env dan node_modules
-├── package.json             # NPM metadata
-└── README.md                # Dokumentasi ini
-```
+### ✨ Features
+
+* **🤖 Daily Autoposting:** Automatically posts a new, random song every day at a scheduled time to keep your community engaged.
+* **🌐 Multi-Platform:** Seamlessly posts to your designated channels on both **Discord** and your **Facebook Page**.
+* **🎵 Interactive Commands:** Users can get instant song recommendations anytime using the `/music` slash command.
+* **🚀 Multi-Server Support:** Ready for public use! Server admins can use `/setchannel` to designate a channel for daily posts and `/removechannel` to opt-out.
+* **🔗 Universal Links:** All Spotify links are converted to universal **Song.link** URLs, allowing anyone to listen on their preferred platform.
+* **💅 Aesthetic Captions:** Posts come with beautifully formatted, genre-aware captions generated from a customizable template.
+* **🎧 Dynamic Presence:** The bot shows what song it's "Listening to" with a dynamic status that updates with every new track shared.
+* **☁️ 24/7 Hosting:** Built to run continuously on a platform like Replit, thanks to an integrated web server to keep it alive.
 
 ---
 
-## ⚙️ Cara Pakai (Local)
-1. Clone repo ini:
-```bash
-git clone https://github.com/lexiiz3417/spotify-facebook-autoposter-v2.git
-cd spotify-facebook-autoposter-v2
-```
+### 🚀 Getting Started
 
-2. Install dependensi:
-```bash
-npm install
-```
+Follow these steps to get your own instance of Alexia FM up and running.
 
-3. Copy file `.env.example` jadi `.env` dan isi:
-```
-SPOTIFY_CLIENT_ID=
-SPOTIFY_CLIENT_SECRET=
-SPOTIFY_PLAYLIST_ID=
-FACEBOOK_PAGE_ID=
-FACEBOOK_ACCESS_TOKEN=
-START_DATE=2025-07-08
-```
+#### **Prerequisites**
+* A **Discord Bot Token** and **Application ID** from the Discord Developer Portal.
+* **Spotify API Credentials** (Client ID & Secret) from the Spotify Developer Dashboard.
+* A server environment that supports Node.js (like **Replit**).
 
-4. Jalankan lokal:
-```bash
-node src/index.js
-```
+#### **Installation**
+1.  **Clone or Fork this Repository.**
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+3.  **Configure your environment variables.** Create a `.env` file for local testing or use the "Secrets" feature on your hosting platform (e.g., Replit). See the configuration section below.
+4.  **Register Slash Commands:** Run the deployment script **once** to register the commands with Discord.
+    ```bash
+    node src/deploy-commands.js
+    ```
+5.  **Run the bot!**
+    ```bash
+    node src/index.js
+    ```
 
 ---
 
-## 🤖 Otomatis via GitHub Actions
-1. Fork repo ini
-2. Masuk ke `Settings → Secrets and variables → Actions`
-3. Tambahkan secrets berikut:
-   - `SPOTIFY_CLIENT_ID`
-   - `SPOTIFY_CLIENT_SECRET`
-   - `SPOTIFY_PLAYLIST_ID`
-   - `FACEBOOK_PAGE_ID`
-   - `FACEBOOK_ACCESS_TOKEN`
-   - `START_DATE`
-4. Buka tab **Actions** → klik **Run workflow** buat testing manual
+### ⚙️ Configuration
 
-> Workflow juga jalan otomatis setiap hari jam 17:00 WIB
+These environment variables are required for the bot to function.
 
----
-
-## ✍️ Template Caption
-Lihat file [`captions/default.txt`](captions/default.txt) — kamu bisa edit, tambah, atau ubah format sesuai style kamu!
-
-Gunakan placeholder:
-- `{day}`
-- `{title}`
-- `{artist}`
-- `{genre}`
-- `{link}`
-- `{mood}`
-- `{tags}`
-
-Pisahkan antar template dengan `---`
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `SPOTIFY_CLIENT_ID` | Your Spotify application's Client ID. | `a1b2c3d4e5f6...` |
+| `SPOTIFY_CLIENT_SECRET` | Your Spotify application's Client Secret. | `f1e2d3c4b5a6...` |
+| `SPOTIFY_PLAYLIST_ID` | The ID of the Spotify playlist to pull songs from. | `37i9dQZEVXbMDoHDwVN2tF` |
+| `DISCORD_TOKEN` | Your Discord bot's token. **(Keep this secret!)** | `MTA4...` |
+| `DISCORD_CLIENT_ID` | Your Discord application's ID (Application ID). | `108123456789...` |
+| `DISCORD_CHANNEL_ID` | (Optional) A default channel ID for your main server. | `109876543210...` |
+| `FACEBOOK_PAGE_ID` | (Optional) The ID of your Facebook Page. | `1000123456789...` |
+| `FACEBOOK_ACCESS_TOKEN`| (Optional) A non-expiring Page Access Token. | `EAA...` |
+| `START_DATE` | The date when the "Day X" counter should begin. | `2025-07-08` |
 
 ---
 
-## ❤️ Credits
-Project ini dikembangkan oleh [Lexiiz3417](https://github.com/Lexiiz3417) buat kamu yang pengen Facebook Page-nya tampil beda setiap hari.
+### 🤖 Usage
 
+Alexia FM is controlled via simple slash commands:
 
-Feel free to fork & remix ✨
+* `/music`: Get a random song recommendation instantly.
+* `/setchannel`: (Admin Only) Sets the current channel to receive daily automated song posts.
+* `/removechannel`: (Admin Only) Stops the daily automated posts for this server.
 
 ---
-
-## 🧠 Next Idea?
-- Support multiple playlist?
-- Track history posted?
-- Add reactions or likes via API?
-
-Pull request welcome 🚀
+*This project was built with passion to make music discovery fun and automated. Enjoy!*

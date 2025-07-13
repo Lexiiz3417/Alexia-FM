@@ -1,7 +1,8 @@
 // src/caption.js
 import { readFile } from "fs/promises";
 
-const moodAndTags = (genre) => {
+// Fungsi ini diexport biar bisa dipinjem sama file discord.js
+export const moodAndTags = (genre) => {
   const g = genre.toLowerCase();
   if (g.includes("lo-fi") || g.includes("chill")) return ["🌙 Chill vibes detected!", "#LoFi #ChillBeats"];
   if (g.includes("rock") || g.includes("punk")) return ["⚡ Rock the day!", "#RockOn #AltRock"];
@@ -13,6 +14,9 @@ const moodAndTags = (genre) => {
   return ["🎶 Your song of the day!", "#Vibes"];
 };
 
+/**
+ * Fungsi utama untuk membuat caption estetik dari template.
+ */
 export const generateCaption = async ({ day, title, artist, genre, link }) => {
   const [mood, tags] = moodAndTags(genre);
   const tagUmum = "#MusicDiscovery #SongOfTheDay #NowPlaying";
