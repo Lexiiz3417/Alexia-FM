@@ -6,6 +6,7 @@ import { getRandomTrack } from "./spotify.js";
 import { getUniversalLink } from "./songlink.js";
 import { generateCaption } from "./caption.js";
 import { postToFacebook, commentOnPost } from "./facebook.js";
+import { startDiscordBot } from "./discord.js";
 
 const START_DATE = new Date(process.env.START_DATE || "2025-07-08");
 
@@ -49,7 +50,16 @@ const START_DATE = new Date(process.env.START_DATE || "2025-07-08");
       console.warn("⚠️ Post ID kosong, komentar tidak ditambahkan.");
     }
 
-    console.log(`✅ Selesai post Day ${dayNumber} ke Facebook Page!`);
+    if (process.env.DISCORD_TOKEN) {
+      console.log("✅ Step 6: Kirim info ke Discord");
+      startDiscordBot({
+        title: track.name,
+        artist: track.artist,
+        link: universalLink
+      });
+    }
+
+    console.log(`✅ Selesai post Day ${dayNumber} ke Facebook Page dan Discord!`);
   } catch (err) {
     console.error("❌ Error terjadi:", err);
   }
