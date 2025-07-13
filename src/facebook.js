@@ -6,28 +6,53 @@ const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
 export const postToFacebook = async (imageUrl, message) => {
   try {
-    const url = `https://graph.facebook.com/v20.0/${PAGE_ID}/photos`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        url: imageUrl,
-        caption: message,
-        published: "true",
-        access_token: ACCESS_TOKEN,
-      }),
-    });
-    const data = await res.json();
+    // Step 1: Upload foto tanpa publish
+    const uploadRes = await fetch(
+      `https://graph.facebook.com/v20.0/${PAGE_ID}/photos`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          url: imageUrl,
+          published: "false",
+          access_token: ACCESS_TOKEN,
+        }),
+      }
+    );
 
-    if (!res.ok || !data.post_id) {
-      console.error("❌ Gagal post ke Facebook:", data);
+    const uploadData = await uploadRes.json();
+    if (!uploadData.id) {
+      console.error("❌ Gagal upload foto:", uploadData);
       return null;
     }
 
-    console.log("✅ Post sukses! post_id:", data.post_id);
-    return data.post_id;
+    const photoId = uploadData.id;
+    console.log("🖼️ Foto berhasil diupload (id):", photoId);
+
+    // Step 2: Buat post ke feed dengan attach foto
+    const postRes = await fetch(
+      `https://graph.facebook.com/v20.0/${PAGE_ID}/feed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          message: message,
+          attached_media: JSON.stringify([{ media_fbid: photoId }]),
+          access_token: ACCESS_TOKEN,
+        }),
+      }
+    );
+
+    const postData = await postRes.json();
+    if (!postRes.ok || !postData.id) {
+      console.error("❌ Gagal post ke timeline:", postData);
+      return null;
+    }
+
+    console.log("✅ Post sukses ke timeline! post_id:", postData.id);
+    return postData.id;
   } catch (err) {
-    console.error("❌ Error saat posting:", err);
+    console.error("❌ Error saat post:", err);
     return null;
   }
 };
@@ -43,8 +68,8 @@ export const commentOnPost = async (postId, message) => {
         access_token: ACCESS_TOKEN,
       }),
     });
-    const data = await res.json();
 
+    const data = await res.json();
     if (!res.ok) {
       console.error("❌ Gagal komen:", data);
       return;
