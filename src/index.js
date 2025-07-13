@@ -52,10 +52,9 @@ const START_DATE = new Date(process.env.START_DATE || "2025-07-08");
 
     if (process.env.DISCORD_TOKEN) {
       console.log("✅ Step 6: Kirim info ke Discord");
+      // Kita kasih 'caption' yang udah jadi, bukan bahan mentah lagi
       startDiscordBot({
-        title: track.name,
-        artist: track.artist,
-        link: universalLink
+        message: caption
       });
     }
 
