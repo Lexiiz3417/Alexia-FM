@@ -10,7 +10,7 @@ export default {
     .setDescription('Summon a random image or GIF with specific tags!')
     .addStringOption(option =>
       option.setName('tags')
-        .setDescription('Describe the image you want (e.g., maid, blonde, long_hair). Separate with commas.')
+        .setDescription('Describe the image you want (e.g., maid, selfies, uniform). Separate with commas.')
         .setRequired(false) // Tidak wajib diisi, bisa summon random
     )
     .addBooleanOption(option =>
