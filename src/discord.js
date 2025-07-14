@@ -1,14 +1,15 @@
 // src/discord.js
 import { Client, GatewayIntentBits, EmbedBuilder, ActivityType } from "discord.js";
 import dotenv from "dotenv";
+import Keyv from "keyv"; // <-- BAHAN UTAMA DIGANTI
 import { getRandomTrack } from "./spotify.js";
 import { getUniversalLink } from "./songlink.js";
 import { generateCaption } from "./caption.js";
-import Database from "@replit/database";
 
 dotenv.config();
 
-const db = new Database();
+// Inisialisasi "Buku Catatan Universal"
+const db = new Keyv('sqlite://db.sqlite');
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 export function updateBotPresence(track) {
@@ -23,6 +24,7 @@ export function updateBotPresence(track) {
 client.once("ready", () => {
   console.log(`🎧 DJ ${client.user.tag} siap melayani semua server!`);
   global.discordClient = client;
+  // Status awal dari revisimu, keren!
   client.user.setActivity('My favorite music', { type: ActivityType.Listening });
 });
 
@@ -46,38 +48,31 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // --- Handler /setchannel yang sudah di-upgrade ---
+  // Handler /setchannel dengan logikamu yang udah di-improve
   if (commandName === 'setchannel') {
-  if (!interaction.member.permissions.has("Administrator")) {
-  return interaction.reply({ content: 'Waduh, cuma admin server yang bisa pake command ini!', ephemeral: true });
-  }
+    if (!interaction.member.permissions.has("Administrator")) {
+      return interaction.reply({ content: 'Waduh, cuma admin server yang bisa pake command ini!', ephemeral: true });
+    }
+    const targetChannel = interaction.options.getChannel('channel');
+    const serverId = interaction.guildId;
+    const channelId = targetChannel.id;
 
-  // Ambil channel yang dipilih dari opsi
-  const targetChannel = interaction.options.getChannel('channel');
-
-  const serverId = interaction.guildId;
-  const channelId = targetChannel.id;
-
-  // Cek dulu, channel ini udah pernah di-set atau belum?
-  const existingChannelId = await db.get(serverId);
-
-  // Kalau udah ada datanya di database...
-  if (existingChannelId) {
-  await interaction.reply({
-  content: `Eh, channel #${targetChannel.name} udah ada di list aku, lho! Nggak perlu ditambahin lagi. 😉`,
-  ephemeral: true
-  });
-  console.log(`❗ Channel ${targetChannel.name} (${channelId}) sudah ada di database untuk server ${serverId}.`);
-  } else { // Kalau belum ada...
-  await db.set(serverId, channelId);
-
-  // Kasih balasan yang lebih jelas
-  await interaction.reply({ 
-  content: `Oke, beres! Channel #${targetChannel.name} sekarang akan jadi tempat nongkrongnya Alexia FM setiap hari.`,
-  ephemeral: true
-  });
-  console.log(`✅ Channel diatur untuk server ${serverId}: ${channelId} (${targetChannel.name})`);
-  }
+    // Logika pengecekan dari revisimu, ini bagus banget!
+    const existingChannelId = await db.get(serverId);
+    if (existingChannelId === channelId) { // Kita cek apakah ID nya sama persis
+      await interaction.reply({
+        content: `Eh, channel #${targetChannel.name} udah jadi channel broadcast di sini kok. Nggak perlu di-set ulang. 😉`,
+        ephemeral: true
+      });
+      console.log(`❗ Channel ${targetChannel.name} (${channelId}) sudah ada di database untuk server ${serverId}.`);
+    } else { 
+      await db.set(serverId, channelId);
+      await interaction.reply({ 
+        content: `Oke, beres! Channel #${targetChannel.name} sekarang akan jadi tempat nongkrongnya Alexia FM setiap hari.`,
+        ephemeral: true
+      });
+      console.log(`✅ Channel diatur untuk server ${serverId}: ${channelId} (${targetChannel.name})`);
+    }
   }
 
   if (commandName === 'removechannel') {
@@ -92,17 +87,20 @@ client.on("interactionCreate", async (interaction) => {
     });
     console.log(`🗑️ Channel dihapus untuk server ${serverId}`);
   }
+
   if (commandName === 'subscribers') {
-    // if (!interaction.member.permissions.has("Administrator")) 
     try {
       await interaction.deferReply(); 
-
-      const allData = await db.getAll();
-      const totalSubscribers = Object.keys(allData.value).length;
+      
+      // CARA BARU BUAT NGITUNG PAKE Keyv
+      let totalSubscribers = 0;
+      for await(const [key, value] of db.iterator()) {
+        totalSubscribers++;
+      }
 
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
-        .setTitle('Alexia FM Stats')
+        .setTitle('📻 Alexia FM Stats')
         .setDescription(`Saat ini, Alexia FM sudah mengudara di **${totalSubscribers}** server! 🚀`)
         .setFooter({ text: 'Terima kasih sudah jadi bagian dari komunitas!' })
         .setTimestamp();
@@ -130,9 +128,15 @@ export async function sendAutoPostEmbed({ caption, imageUrl, channelId }) {
 
   if (!channel) {
     console.warn(`❗ Channel dengan ID ${channelId} tidak ditemukan.`);
-    const allServers = await db.getAll();
-    const serverId = Object.keys(allServers).find(key => allServers[key] === channelId);
-    if(serverId) await db.delete(serverId);
+    // CARA BARU BUAT HAPUS DATA YANG SALAH PAKE Keyv
+    let serverId;
+    for await(const [key, value] of db.iterator()) {
+        if (value === channelId) {
+            serverId = key;
+            break;
+        }
+    }
+    if (serverId) await db.delete(serverId);
     return;
   }
 
