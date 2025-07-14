@@ -1,17 +1,38 @@
 // src/discord.js
-import { Client, GatewayIntentBits, EmbedBuilder, ActivityType } from "discord.js";
+import { Client, GatewayIntentBits, Collection, EmbedBuilder, ActivityType } from "discord.js";
 import dotenv from "dotenv";
-import Keyv from "keyv"; // <-- BAHAN UTAMA DIGANTI
-import { getRandomTrack } from "./spotify.js";
-import { getUniversalLink } from "./songlink.js";
-import { generateCaption } from "./caption.js";
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'url';
+import Keyv from "keyv";
 
 dotenv.config();
 
-// Inisialisasi "Buku Catatan Universal"
 const db = new Keyv('sqlite://db.sqlite');
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+// --- BAGIAN COMMAND HANDLER ---
+// Membuat 'lemari' untuk menyimpan semua command
+client.commands = new Collection();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+// 'Membaca' setiap file command dan menyimpannya ke lemari
+for (const file of commandFiles) {
+	const filePath = path.join(commandsPath, file);
+	const command = await import(filePath);
+	if ('data' in command && 'execute' in command) {
+		client.commands.set(command.data.name, command);
+	} else {
+		console.log(`[WARNING] Command di ${filePath} tidak memiliki properti "data" atau "execute".`);
+	}
+}
+// ------------------------------
+
+/**
+ * Fungsi untuk mengubah status bot menjadi multi-baris dinamis.
+ */
 export function updateBotPresence(track) {
   if (!client.user) return;
   client.user.setActivity(track.name, {
@@ -21,99 +42,45 @@ export function updateBotPresence(track) {
   console.log(`✅ Status bot di-update: Listening to ${track.name} by ${track.artist}`);
 }
 
+/**
+ * Event yang berjalan sekali saat bot berhasil online.
+ */
 client.once("ready", () => {
   console.log(`🎧 DJ ${client.user.tag} siap melayani semua server!`);
   global.discordClient = client;
-  // Status awal dari revisimu, keren!
-  client.user.setActivity('My favorite music', { type: ActivityType.Listening });
+  client.user.setActivity('musik untuk dunia', { type: ActivityType.Listening });
 });
 
+/**
+ * Event yang berjalan setiap kali ada interaksi (slash command).
+ * Ini adalah 'resepsionis' yang menerima panggilan.
+ */
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
-  const { commandName } = interaction;
 
-  if (commandName === 'music') {
-    try {
-      await interaction.deferReply(); 
-      const track = await getRandomTrack();
-      updateBotPresence(track);
-      const universalLink = await getUniversalLink(track.url);
-      const tempCaption = await generateCaption({ day: '✨', title: track.name, artist: track.artist, genre: track.genre, link: universalLink });
-      const finalCaption = tempCaption.replace(/Day ✨ – /g, '');
-      const embed = new EmbedBuilder().setColor('Random').setDescription(finalCaption).setImage(track.image).setTimestamp();
-      await interaction.editReply({ embeds: [embed] });
-    } catch (error) {
-      console.error("Error di command /music:", error);
-      await interaction.editReply({ content: 'Waduh, ada error. Coba lagi nanti ya!' });
-    }
+  const command = interaction.client.commands.get(interaction.commandName);
+
+  if (!command) {
+    console.error(`Command ${interaction.commandName} tidak ditemukan.`);
+    return;
   }
 
-  // Handler /setchannel dengan logikamu yang udah di-improve
-  if (commandName === 'setchannel') {
-    if (!interaction.member.permissions.has("Administrator")) {
-      return interaction.reply({ content: 'Waduh, cuma admin server yang bisa pake command ini!', ephemeral: true });
-    }
-    const targetChannel = interaction.options.getChannel('channel');
-    const serverId = interaction.guildId;
-    const channelId = targetChannel.id;
-
-    // Logika pengecekan dari revisimu, ini bagus banget!
-    const existingChannelId = await db.get(serverId);
-    if (existingChannelId === channelId) { // Kita cek apakah ID nya sama persis
-      await interaction.reply({
-        content: `Eh, channel #${targetChannel.name} udah jadi channel broadcast di sini kok. Nggak perlu di-set ulang. 😉`,
-        ephemeral: true
-      });
-      console.log(`❗ Channel ${targetChannel.name} (${channelId}) sudah ada di database untuk server ${serverId}.`);
-    } else { 
-      await db.set(serverId, channelId);
-      await interaction.reply({ 
-        content: `Oke, beres! Channel #${targetChannel.name} sekarang akan jadi tempat nongkrongnya Alexia FM setiap hari.`,
-        ephemeral: true
-      });
-      console.log(`✅ Channel diatur untuk server ${serverId}: ${channelId} (${targetChannel.name})`);
-    }
-  }
-
-  if (commandName === 'removechannel') {
-    if (!interaction.member.permissions.has("Administrator")) {
-      return interaction.reply({ content: 'Waduh, cuma admin server yang bisa pake command ini!', ephemeral: true });
-    }
-    const serverId = interaction.guildId;
-    await db.delete(serverId);
-    await interaction.reply({
-      content: 'Siap, laksanakan! Server ini tidak akan lagi menerima postingan musik harian.',
-      ephemeral: true
-    });
-    console.log(`🗑️ Channel dihapus untuk server ${serverId}`);
-  }
-
-  if (commandName === 'subscribers') {
-    try {
-      await interaction.deferReply(); 
-      
-      // CARA BARU BUAT NGITUNG PAKE Keyv
-      let totalSubscribers = 0;
-      for await(const [key, value] of db.iterator()) {
-        totalSubscribers++;
-      }
-
-      const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('📻 Alexia FM Stats')
-        .setDescription(`Saat ini, Alexia FM sudah mengudara di **${totalSubscribers}** server! 🚀`)
-        .setFooter({ text: 'Terima kasih sudah jadi bagian dari komunitas!' })
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed] });
-
-    } catch (error) {
-      console.error("Error di command /subscribers:", error);
-      await interaction.editReply({ content: 'Waduh, gagal ngambil data statistik.' });
+  try {
+    // Menyerahkan tugas ke file command yang sesuai
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: 'Terjadi error saat menjalankan command ini!', ephemeral: true });
+    } else {
+      await interaction.reply({ content: 'Terjadi error saat menjalankan command ini!', ephemeral: true });
     }
   }
 });
 
+/**
+ * Fungsi untuk menginisialisasi dan login bot Discord.
+ */
 export function startDiscordBot() {
   if (!process.env.DISCORD_TOKEN) {
     console.warn("❗ DISCORD_TOKEN tidak ditemukan, bot tidak dijalankan.");
@@ -122,24 +89,32 @@ export function startDiscordBot() {
   client.login(process.env.DISCORD_TOKEN);
 }
 
+/**
+ * Fungsi untuk mengirim embed postingan otomatis harian ke channel tertentu.
+ */
 export async function sendAutoPostEmbed({ caption, imageUrl, channelId }) {
   if (!global.discordClient) return;
   const channel = global.discordClient.channels.cache.get(channelId);
-
+  
   if (!channel) {
-    console.warn(`❗ Channel dengan ID ${channelId} tidak ditemukan.`);
-    // CARA BARU BUAT HAPUS DATA YANG SALAH PAKE Keyv
-    let serverId;
-    for await(const [key, value] of db.iterator()) {
-        if (value === channelId) {
-            serverId = key;
-            break;
-        }
-    }
-    if (serverId) await db.delete(serverId);
-    return;
+      console.warn(`❗ Channel dengan ID ${channelId} tidak ditemukan.`);
+      // Hapus data yang salah dari database
+      let serverId;
+      for await(const [key, value] of db.iterator()) {
+          if (value === channelId) {
+              serverId = key;
+              break;
+          }
+      }
+      if (serverId) await db.delete(serverId);
+      return;
   }
 
-  const embed = new EmbedBuilder().setColor('Random').setDescription(caption).setImage(imageUrl).setTimestamp();
+  const embed = new EmbedBuilder()
+    .setColor('Random')
+    .setDescription(caption)
+    .setImage(imageUrl)
+    .setTimestamp();
+  
   await channel.send({ embeds: [embed] });
 }
