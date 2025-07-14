@@ -1,11 +1,11 @@
 modules = ["nodejs-20"]
-run = "node src/index.js"
+run = "pm2-runtime src/index.js"
 
 [nix]
 channel = "stable-24_05"
 
 [deployment]
-run = ["sh", "-c", "node src/index.js"]
+run = ["sh", "-c", "pm2-runtime src/index.js"]
 
 [[ports]]
 localPort = 3000
