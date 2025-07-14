@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@discordjs/rest": "^2.3.0",
+    "@keyv/sqlite": "^3.6.1",
     "discord-api-types": "^0.37.91",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
