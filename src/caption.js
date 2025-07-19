@@ -1,9 +1,7 @@
-// src/caption.js (VERSI BARU - ANTI GAGAL ENCODING)
+// src/caption.js
+import { readFile } from "fs/promises";
 
-// Kita tidak lagi butuh 'readFile'
-// import { readFile } from "fs/promises";
-
-// Fungsi ini tetap sama, tidak ada perubahan
+// Fungsi ini diexport biar bisa dipinjem sama file discord.js
 export const moodAndTags = (genre) => {
   const g = genre.toLowerCase();
   if (g.includes("lo-fi") || g.includes("chill")) return ["🌙 Chill vibes detected!", "#LoFi #ChillBeats"];
@@ -16,41 +14,6 @@ export const moodAndTags = (genre) => {
   return ["🎶 Your song of the day!", "#Vibes"];
 };
 
-// =================================================================
-// PERUBAHAN UTAMA DI SINI
-// =================================================================
-// Template dari default.txt kita masukkan langsung ke dalam kode
-const rawTemplate = `/ᐠ - ˕ -マ ⛧°. ⋆༺☾༻⋆. °⛧
-╭∪─∪────────── 𝄞⨾𓍢ִ໋,♫,♪
-┊ {mood}
-┊ Day {day} – Music Pick 🎧
-┊
-┊   🎵 {title}
-┊   🎤 {artist}
-┊   🎼 Genre: {genre}
-┊
-┊ Listen Now:
-┊ {link}
-╰─────────────  𝄞⨾𓍢ִ໋,♫,♪
-
-{tags}
----
-⊹ ࣪ ﹏𓊝﹏𓂁﹏⊹ ࣪ ˖
-╭───────── 𝄞⨾𓍢ִ໋,♫,♪
-┊ {mood}
-┊ Day {day} – Music Pick 🎧
-┊
-┊   🎵 {title}
-┊   🎤 {artist}
-┊   🎼 Genre: {genre}
-┊
-┊ Listen Now:
-┊ {link} 
-╰─────────  𝄞⨾𓍢ִ໋,♫,♪
-
-{tags}`;
-// =================================================================
-
 /**
  * Fungsi utama untuk membuat caption estetik dari template.
  */
@@ -58,8 +21,8 @@ export const generateCaption = async ({ day, title, artist, genre, link }) => {
   const [mood, tags] = moodAndTags(genre);
   const tagUmum = "#MusicDiscovery #SongOfTheDay #NowPlaying";
 
-  // Kita tidak lagi membaca file, tapi langsung menggunakan template di atas
-  const templates = rawTemplate.split(/---+/).map((t) => t.trim()).filter(Boolean);
+  const raw = await readFile("captions/default.txt", "utf-8");
+  const templates = raw.split(/---+/).map((t) => t.trim()).filter(Boolean);
   const chosen = templates[Math.floor(Math.random() * templates.length)];
 
   return chosen
