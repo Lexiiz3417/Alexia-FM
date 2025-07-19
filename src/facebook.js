@@ -3,13 +3,32 @@
 import fetch from "node-fetch";
 
 /**
- * Memposting foto langsung ke album spesifik, yang juga akan muncul di timeline.
+ * Mengirimkan data dengan format yang lebih 'raw' untuk menjaga encoding.
+ * @param {string} url URL tujuan.
+ * @param {object} params Objek berisi parameter.
+ * @returns {Promise<Response>} Respons dari fetch.
+ */
+async function postEncoded(url, params) {
+    const body = Object.entries(params)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
+
+    return fetch(url, {
+        method: "POST",
+        // Beritahu Facebook kita pakai UTF-8 secara eksplisit
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: body,
+    });
+}
+
+
+/**
+ * Memposting foto langsung ke album spesifik.
  * @param {string} imageUrl URL dari gambar yang akan diposting.
  * @param {string} message Caption untuk postingan.
- * @returns {Promise<string|null>} ID dari postingan yang baru dibuat, atau null jika gagal.
+ * @returns {Promise<string|null>} ID dari postingan yang baru dibuat.
  */
 export const postToFacebook = async (imageUrl, message) => {
-  // Variabel dibaca DI DALAM fungsi untuk memastikan .env sudah dimuat.
   const ALBUM_ID = process.env.FACEBOOK_ALBUM_ID;
   const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
@@ -19,19 +38,13 @@ export const postToFacebook = async (imageUrl, message) => {
   }
 
   try {
-    const postRes = await fetch(
-      `https://graph.facebook.com/v20.0/${ALBUM_ID}/photos`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          url: imageUrl,
-          caption: message,
-          access_token: ACCESS_TOKEN,
-        }),
-      }
-    );
-
+    const params = {
+      url: imageUrl,
+      caption: message,
+      access_token: ACCESS_TOKEN,
+    };
+    const postRes = await postEncoded(`https://graph.facebook.com/v20.0/${ALBUM_ID}/photos`, params);
+    
     const postData = await postRes.json();
     if (!postRes.ok || !postData.post_id) {
       console.error("❌ Gagal post ke album Facebook:", postData);
@@ -56,15 +69,11 @@ export const commentOnPost = async (postId, message) => {
   const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
   try {
-    const url = `https://graph.facebook.com/v20.0/${postId}/comments`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        message,
-        access_token: ACCESS_TOKEN,
-      }),
-    });
+    const params = {
+      message,
+      access_token: ACCESS_TOKEN,
+    };
+    const res = await postEncoded(`https://graph.facebook.com/v20.0/${postId}/comments`, params);
 
     const data = await res.json();
     if (!res.ok) {
@@ -73,7 +82,7 @@ export const commentOnPost = async (postId, message) => {
     }
 
     console.log("💬 Komentar pancingan berhasil ditambahkan ke post Facebook!");
-  } catch (err) { 
+  } catch (err) {
     console.error("❌ Error saat mencoba berkomentar di Facebook:", err);
   }
 };
