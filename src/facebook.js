@@ -1,10 +1,6 @@
-// src/facebook.js (VERSI UPGRADE DENGAN ALBUM & KOMENTAR)
+// src/facebook.js
 
 import fetch from "node-fetch";
-
-const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
-const ALBUM_ID = process.env.FACEBOOK_ALBUM_ID; 
-const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
 /**
  * Memposting foto langsung ke album spesifik, yang juga akan muncul di timeline.
@@ -13,16 +9,16 @@ const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
  * @returns {Promise<string|null>} ID dari postingan yang baru dibuat, atau null jika gagal.
  */
 export const postToFacebook = async (imageUrl, message) => {
-  // Jika tidak ada ALBUM_ID, fallback ke metode lama (post ke timeline biasa)
+  // Variabel dibaca DI DALAM fungsi untuk memastikan .env sudah dimuat.
+  const ALBUM_ID = process.env.FACEBOOK_ALBUM_ID;
+  const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
+
   if (!ALBUM_ID) {
-    console.warn("❗ FACEBOOK_ALBUM_ID tidak ditemukan. Memposting ke timeline utama...");
-    // Di sini kamu bisa masukkan lagi kode postToFacebook yang lama jika mau ada fallback
-    // Untuk sekarang, kita fokus ke metode album.
+    console.warn("❗ FACEBOOK_ALBUM_ID tidak ditemukan. Postingan Facebook di-skip.");
     return null; 
   }
 
   try {
-    // Langsung post ke endpoint album, ini lebih simpel dan direct!
     const postRes = await fetch(
       `https://graph.facebook.com/v20.0/${ALBUM_ID}/photos`,
       {
@@ -30,7 +26,7 @@ export const postToFacebook = async (imageUrl, message) => {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
           url: imageUrl,
-          caption: message, // 'caption' digunakan saat post ke album, bukan 'message'
+          caption: message,
           access_token: ACCESS_TOKEN,
         }),
       }
@@ -38,12 +34,12 @@ export const postToFacebook = async (imageUrl, message) => {
 
     const postData = await postRes.json();
     if (!postRes.ok || !postData.post_id) {
-      console.error("❌ Gagal post ke album:", postData);
+      console.error("❌ Gagal post ke album Facebook:", postData);
       return null;
     }
 
-    console.log("✅ Post sukses ke album & timeline! post_id:", postData.post_id);
-    return postData.post_id; // Kita butuh post_id untuk komentar
+    console.log("✅ Post sukses ke album Facebook! post_id:", postData.post_id);
+    return postData.post_id;
 
   } catch (err) {
     console.error("❌ Error besar saat post ke Facebook:", err);
@@ -57,6 +53,8 @@ export const postToFacebook = async (imageUrl, message) => {
  * @param {string} message Isi komentar.
  */
 export const commentOnPost = async (postId, message) => {
+  const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
+
   try {
     const url = `https://graph.facebook.com/v20.0/${postId}/comments`;
     const res = await fetch(url, {
@@ -74,8 +72,8 @@ export const commentOnPost = async (postId, message) => {
       return;
     }
 
-    console.log("💬 Komentar pancingan berhasil ditambahkan!");
-  } catch (err) {
-    console.error("❌ Error saat mencoba berkomentar:", err);
+    console.log("💬 Komentar pancingan berhasil ditambahkan ke post Facebook!");
+  } catch (err) { 
+    console.error("❌ Error saat mencoba berkomentar di Facebook:", err);
   }
 };
