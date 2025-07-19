@@ -4,21 +4,18 @@ import fetch from 'node-fetch';
 
 /**
  * Mengambil URL GIF untuk aksi tertentu dari API waifu.pics.
- * @param {string} action - Nama aksi yang diinginkan (contoh: 'slap', 'hug', 'kick').
+ * @param {string} action - Nama aksi yang diinginkan (contoh: 'slap', 'hug').
  * @returns {Promise<string|null>} URL dari GIF, atau null jika terjadi error.
  */
 export async function getActionGif(action) {
   try {
     const apiUrl = `https://api.waifu.pics/sfw/${action}`;
     const response = await fetch(apiUrl);
-
     if (!response.ok) {
       throw new Error(`API waifu.pics returned status: ${response.status}`);
     }
-
     const data = await response.json();
     return data.url;
-    
   } catch (error) {
     console.error(`Gagal mengambil GIF untuk aksi "${action}":`, error);
     return null;
@@ -26,43 +23,39 @@ export async function getActionGif(action) {
 }
 
 /**
- * Mencari gambar/GIF dari waifu.im berdasarkan tag dan filter.
+ * Mencari gambar/GIF dari Danbooru dan MENGEMBALIKAN ratingnya.
  * @param {Object} options - Opsi pencarian.
- * @param {string[]} [options.tags=[]] - Array berisi tag yang dicari (contoh: ['maid', 'long_hair']).
+ * @param {string[]} [options.tags=[]] - Array berisi tag yang dicari.
  * @param {boolean} [options.isGif=false] - Set true untuk mencari GIF.
- * @returns {Promise<string|null>} URL dari gambar/GIF, atau null jika terjadi error.
+ * @returns {Promise<object|string|null>} Objek berisi { file_url, rating }, atau 'not_found' atau null.
  */
-export async function searchWaifuIm({ tags = [], isGif = false } = {}) {
+export async function searchDanbooru({ tags = [], isGif = false } = {}) {
   try {
-    // Membangun query parameter dengan rapi
-    const params = new URLSearchParams();
-    if (isGif) {
-      params.append('is_gif', 'true');
-    }
-    if (tags.length > 0) {
-      tags.forEach(tag => params.append('included_tags', tag));
-    }
-    
-    const apiUrl = `https://api.waifu.im/search?${params}`;
-    
-    const response = await fetch(apiUrl);
+    const searchTags = [...tags];
 
+    if (isGif) {
+      searchTags.push('filetype:gif');
+    }
+    
+    const tagQuery = searchTags.join('+');
+    const apiUrl = `https://danbooru.donmai.us/posts.json?tags=${tagQuery}&limit=20&random=true`;
+
+    const response = await fetch(apiUrl);
     if (!response.ok) {
-      throw new Error(`API waifu.im returned status: ${response.status}`);
+      throw new Error(`API Danbooru returned status: ${response.status}`);
     }
 
     const data = await response.json();
 
-    // Pastikan ada gambar di dalam response
-    if (data.images && data.images.length > 0) {
-      return data.images[0].url; // Ambil URL dari gambar pertama
+    if (data && data.length > 0 && data[0].file_url) {
+      const post = data[0];
+      return { file_url: post.file_url, rating: post.rating };
     }
     
-    // Jika tidak ada gambar yang ditemukan
     return 'not_found';
 
-  } catch (error) {
-    console.error(`Gagal melakukan pencarian di waifu.im:`, error);
+  } catch (error) { // <-- PERBAIKAN DI SINI, kurung kurawal ditambahkan
+    console.error(`Gagal melakukan pencarian di Danbooru:`, error);
     return null;
   }
 }

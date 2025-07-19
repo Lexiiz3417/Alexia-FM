@@ -1,22 +1,15 @@
-// src/facebook.js
+// src/facebook.js 
 
 import fetch from "node-fetch";
 
-// Baca versi API dari .env, dengan fallback ke v20.0 jika tidak ada
 const API_VERSION = process.env.FACEBOOK_API_VERSION || 'v23.0';
 
-/**
- * Memposting foto langsung ke album spesifik.
- * @param {string} imageUrl URL dari gambar yang akan diposting.
- * @param {string} message Caption untuk postingan.
- * @returns {Promise<string|null>} ID dari postingan yang baru dibuat.
- */
 export const postToFacebook = async (imageUrl, message) => {
-  const ALBUM_ID = process.env.FACEBOOK_ALBUM_ID;
+  const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
   const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
-  if (!ALBUM_ID) {
-    console.warn("❗ FACEBOOK_ALBUM_ID not found. Facebook post skipped.");
+  if (!PAGE_ID) {
+    console.warn("❗ FACEBOOK_PAGE_ID not found. Facebook post skipped.");
     return null; 
   }
 
@@ -28,7 +21,7 @@ export const postToFacebook = async (imageUrl, message) => {
     });
 
     const postRes = await fetch(
-      `https://graph.facebook.com/${API_VERSION}/${ALBUM_ID}/photos`,
+      `https://graph.facebook.com/${API_VERSION}/${PAGE_ID}/photos`,
       {
         method: "POST",
         body: body,
@@ -37,11 +30,11 @@ export const postToFacebook = async (imageUrl, message) => {
 
     const postData = await postRes.json();
     if (!postRes.ok || !postData.post_id) {
-      console.error("❌ Failed to post to Facebook album:", postData);
+      console.error("❌ Failed to post to Facebook feed:", postData);
       return null;
     }
 
-    console.log("✅ Successfully posted to Facebook album! post_id:", postData.post_id);
+    console.log("✅ Successfully posted to Facebook feed! post_id:", postData.post_id);
     return postData.post_id;
 
   } catch (err) {
@@ -50,11 +43,6 @@ export const postToFacebook = async (imageUrl, message) => {
   }
 };
 
-/**
- * Menambahkan komentar ke postingan Facebook.
- * @param {string} postId ID dari postingan yang akan dikomentari.
- * @param {string} message Isi komentar.
- */
 export const commentOnPost = async (postId, message) => {
   const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
@@ -64,7 +52,7 @@ export const commentOnPost = async (postId, message) => {
         access_token: ACCESS_TOKEN,
     });
       
-    const res = await fetch(`https://graph.facebook.com/${API_VERSION}/${postId}/comments`, { // <-- Menggunakan API_VERSION
+    const res = await fetch(`https://graph.facebook.com/${API_VERSION}/${postId}/comments`, {
       method: "POST",
       body: body,
     });
