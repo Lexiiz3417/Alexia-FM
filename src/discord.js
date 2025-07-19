@@ -16,6 +16,7 @@ export function updateBotPresence(client, track) {
 
 // Fungsi ini sekarang menerima 'client' secara eksplisit
 export function startDiscordBot(client) {
+  client.on('error', console.error);
   client.once(Events.ClientReady, c => {
     console.log(`🎧 DJ ${c.user.tag} is ready to serve!`);
     c.user.setActivity('music for the world', { type: ActivityType.Listening });
