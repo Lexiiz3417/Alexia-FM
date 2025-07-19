@@ -48,7 +48,7 @@ export function startDiscordBot(client) {
 }
 
 // Terima `client` sebagai argumen, buang penggunaan variabel global
-export async function sendAutoPostEmbed({ client, caption, imageUrl, channelId }) {
+export async function sendAutoPostEmbed({ client, caption, imageUrl, channelId, comment}) {
   const channel = client.channels.cache.get(channelId);
   
   if (!channel) {
@@ -70,5 +70,8 @@ export async function sendAutoPostEmbed({ client, caption, imageUrl, channelId }
     .setImage(imageUrl)
     .setTimestamp();
   
-  await channel.send({ embeds: [embed] });
-}
+    await channel.send({ 
+      content: comment,
+      embeds: [embed] 
+    });
+  }
