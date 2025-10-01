@@ -25,6 +25,7 @@ export const getPlaylistTracks = async () => {
     const tracks = playlist.videos.map(item => {
       // Kita ambil thumbnail kualitas terbaik
       const bestThumbnail = item.thumbnails.sort((a, b) => b.width - a.width)[0];
+      const cleanArtistName = item.author.name.replace(/ - Topic$/, '').trim();
       return {
         name: item.title.text,
         artist: item.author.name,
