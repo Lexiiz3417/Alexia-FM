@@ -5,7 +5,6 @@
 ┊
 ┊   🎵 {title}
 ┊   🎤 {artist}
-┊   🎼 Genre: {genre}
 ┊
 ┊ Listen Now:
 ┊ {link}
@@ -20,7 +19,6 @@
 ┊
 ┊   🎵 {title}
 ┊   🎤 {artist}
-┊   🎼 Genre: {genre}
 ┊
 ┊ Listen Now:
 ┊ {link} 

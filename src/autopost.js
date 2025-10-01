@@ -13,7 +13,7 @@ import { cropToSquare } from './imageProcessor.js';
 dotenv.config();
 
 const db = new Keyv('sqlite://db.sqlite');
-const START_DATE = new Date(process.env.START_DATE || "2025-10-1");
+const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
 
 /**
  * Mengambil lagu berikutnya dari daftar putar yang sudah diacak secara berurutan.
@@ -69,10 +69,10 @@ export async function performAutopost(client) {
     updateBotPresence(client, track);
     const imageBuffer = await cropToSquare(finalImageUrl);
     const universalLink = await getUniversalLink(track.url);
-    const caption = await generateCaption({ day: dayNumber, title: track.name, artist: track.artist, genre: track.genre, link: universalLink });
+    const caption = await generateCaption({ day: dayNumber, title: track.name, artist: track.artist, link: universalLink });
     
     if (process.env.FACEBOOK_PAGE_ID) {
-        const postId = await postToFacebook(track.image, caption);
+        const postId = await postToFacebook(finalImageUrl, caption, imageBuffer);
         if (postId) {
             console.log(`✅ Song & caption ready. FB Post ID: ${postId}`);
             const commentMessage = "What do you guys think of this track? Let me know below! 👇";
