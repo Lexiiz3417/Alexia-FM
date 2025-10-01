@@ -17,6 +17,7 @@
     "keyv": "^4.5.4",
     "node-cron": "^3.0.3",
     "node-fetch": "^3.3.2",
+    "sharp": "^0.34.4",
     "youtubei.js": "^9.1.0"
   },
   "author": "Lexiiz3417",
