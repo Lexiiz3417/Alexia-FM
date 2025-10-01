@@ -20,8 +20,8 @@ export async function getHighResArtwork(title, artist) {
     if (data.resultCount > 0 && data.results[0].artworkUrl100) {
       const artworkUrl = data.results[0].artworkUrl100;
       // Mengganti '100x100' dengan '600x600' untuk resolusi lebih tinggi
-      const highResUrl = artworkUrl.replace('100x100', '600x600');
-      console.log(`✅ Found high-res artwork for "${title}" from iTunes.`);
+      const highResUrl = artworkUrl.replace('100x100', '1000x1000');
+            console.log(`✅ Found high-res artwork for "${title}" from iTunes.`);
       return highResUrl;
     }
     
