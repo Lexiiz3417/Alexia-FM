@@ -61,10 +61,8 @@ export async function performAutopost(client) {
       return false;
     }
     
-    // --- Pendekatan Hybrid untuk Cover Art ---
     const highResArt = await getHighResArtwork(track.name, track.artist);
     const finalImageUrl = highResArt || track.image;
-    // -----------------------------------------
     
     updateBotPresence(client, track);
     const imageBuffer = await cropToSquare(finalImageUrl);
@@ -85,8 +83,14 @@ export async function performAutopost(client) {
     console.log(`📣 Sending to all Discord subscribers...`);
     let count = 0;
     const discordComment = "A new track for today! What do you think? 🤔";
+    const discordIdRegex = /^\d{17,19}$/; // Regex untuk memvalidasi format ID Discord
+
     for await (const [serverId, channelId] of db.iterator()) {
-       if (serverId.startsWith('keyv:')) continue; // Skip internal keyv keys
+       // FILTER BARU: Hanya proses key yang formatnya adalah ID Discord yang valid.
+       if (!discordIdRegex.test(serverId)) {
+         console.log(`🟡 Skipping non-server key from DB: "${serverId}"`);
+         continue;
+       }
        
       try {
         await sendAutoPostEmbed({ 
