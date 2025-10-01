@@ -1,16 +1,23 @@
-// src/commands/music.js (VERSI UPGRADE)
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { getPlaylistTracks } from '../ytmusic.js'; // <-- Ganti ke ytmusic.js
+// src/commands/music.js
+
+import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { getPlaylistTracks } from '../ytmusic.js';
 import { getUniversalLink } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence } from '../discord.js';
+import { getHighResArtwork } from '../artworkFetcher.js';
+import { cropToSquare } from '../imageProcessor.js';
 
 let cachedPlaylist = [];
 let lastFetchTime = 0;
 
+/**
+ * Mengambil satu lagu acak dari playlist, dengan sistem cache sederhana.
+ * @returns {Promise<object|null>} Objek track atau null jika gagal.
+ */
 async function getRandomTrackFromYT() {
     const now = Date.now();
-    // Cache playlist selama 1 jam biar gak fetch terus-terusan
+    // Cache playlist selama 1 jam (3600000 ms) untuk menghindari fetch berlebihan
     if (now - lastFetchTime > 3600000 || cachedPlaylist.length === 0) {
         console.log("Music command cache expired or empty. Refetching playlist...");
         cachedPlaylist = await getPlaylistTracks();
@@ -19,7 +26,6 @@ async function getRandomTrackFromYT() {
     
     if (cachedPlaylist.length === 0) return null;
     
-    // Pilih lagu secara acak dari cache
     return cachedPlaylist[Math.floor(Math.random() * cachedPlaylist.length)];
 }
 
@@ -31,20 +37,41 @@ export default {
   async execute(interaction) {
     try {
       await interaction.deferReply(); 
-      const track = await getRandomTrackFromYT();
       
+      const track = await getRandomTrackFromYT();
       if (!track) {
           return interaction.editReply({ content: 'Sorry, I couldn\'t fetch the playlist right now. Please try again later.' });
       }
 
       updateBotPresence(interaction.client, track); 
+
+      // --- Pendekatan Hybrid untuk Cover Art ---
+      const highResArt = await getHighResArtwork(track.name, track.artist);
+      const finalImageUrl = highResArt || track.image;
+      // -----------------------------------------
+
+      const imageBuffer = await cropToSquare(finalImageUrl);
       const universalLink = await getUniversalLink(track.url);
       
       const tempCaption = await generateCaption({ day: '✨', title: track.name, artist: track.artist, genre: track.genre, link: universalLink });
       const finalCaption = tempCaption.replace(/Day ✨ – /g, 'Music Pick');
 
-      const embed = new EmbedBuilder().setColor('Random').setDescription(finalCaption).setImage(track.image).setTimestamp();
-      await interaction.editReply({ embeds: [embed] });
+      const embed = new EmbedBuilder()
+        .setColor('Random')
+        .setDescription(finalCaption)
+        .setTimestamp();
+      
+      const replyPayload = { embeds: [embed], fetchReply: true };
+
+      if (imageBuffer) {
+        const attachment = new AttachmentBuilder(imageBuffer, { name: 'cover.png' });
+        embed.setImage('attachment://cover.png');
+        replyPayload.files = [attachment];
+      } else {
+        embed.setImage(finalImageUrl);
+      }
+
+      await interaction.editReply(replyPayload);
 
     } catch (error) {
       console.error("Error executing /music command:", error);
