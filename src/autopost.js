@@ -3,11 +3,10 @@
 import dotenv from "dotenv";
 import Keyv from "keyv";
 import { getPlaylistTracks } from "./ytmusic.js";
-import { getUniversalLink } from "./songlink.js";
+import { getOdesliData } from "./songlink.js";
 import { generateCaption } from "./caption.js";
 import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
-import { getHighResArtwork } from './artworkFetcher.js';
 import { cropToSquare } from './imageProcessor.js';
 
 dotenv.config();
@@ -16,9 +15,8 @@ const db = new Keyv('sqlite://db.sqlite');
 const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
 
 /**
- * Mengambil lagu berikutnya dari daftar putar yang sudah diacak secara berurutan.
- * Akan mengacak ulang jika daftar putar sudah habis.
- * @returns {Promise<object|null>} Objek track atau null jika gagal.
+ * Mengambil track mentah berikutnya dari playlist YouTube di database.
+ * @returns {Promise<object|null>} Objek track mentah dari ytmusic.js atau null.
  */
 async function getNextTrack() {
   let shuffledPlaylist = await db.get('shuffled_playlist');
@@ -43,34 +41,44 @@ async function getNextTrack() {
 }
 
 /**
- * Menjalankan seluruh proses autopost harian.
+ * Menjalankan seluruh proses autopost harian dengan alur baru.
  * @param {import('discord.js').Client} client - Instance client Discord.
  * @returns {Promise<boolean>} True jika berhasil, false jika gagal.
  */
 export async function performAutopost(client) {
   try {
-    console.log("🚀 Starting daily autoposting task...");
+    console.log("🚀 Starting daily autoposting task with Odesli workflow...");
     
     const today = new Date();
     const diffTime = Math.abs(today - START_DATE);
     const dayNumber = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
     
-    const track = await getNextTrack();
-    if (!track) {
-      console.error("❌ Could not get a track to post. Aborting autopost.");
+    // Langkah 1: Dapatkan track mentah dari playlist YouTube
+    const initialTrack = await getNextTrack();
+    if (!initialTrack) {
+      console.error("❌ Could not get a track from playlist. Aborting autopost.");
       return false;
     }
     
-    const highResArt = await getHighResArtwork(track.name, track.artist);
-    const finalImageUrl = highResArt || track.image;
+    // Langkah 2: Gunakan Odesli (Song.link) untuk mendapatkan data bersih dan cover art resmi
+    const odesliData = await getOdesliData(initialTrack.url);
+    if (!odesliData) {
+      console.error(`❌ Odesli lookup failed for ${initialTrack.url}. Aborting autopost.`);
+      return false;
+    }
     
-    updateBotPresence(client, track);
-    const imageBuffer = await cropToSquare(finalImageUrl);
-    const universalLink = await getUniversalLink(track.url);
-    const caption = await generateCaption({ day: dayNumber, title: track.name, artist: track.artist, link: universalLink });
+    // Siapkan data final yang sudah bersih untuk bot presence
+    const finalTrack = {
+        name: odesliData.title,
+        artist: odesliData.artist,
+    };
+
+    updateBotPresence(client, finalTrack);
+    const imageBuffer = await cropToSquare(odesliData.imageUrl);
+    const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
     
     if (process.env.FACEBOOK_PAGE_ID) {
-        const postId = await postToFacebook(finalImageUrl, caption, imageBuffer);
+        const postId = await postToFacebook(odesliData.imageUrl, caption, imageBuffer);
         if (postId) {
             console.log(`✅ Song & caption ready. FB Post ID: ${postId}`);
             const commentMessage = "What do you guys think of this track? Let me know below! 👇";
@@ -83,10 +91,9 @@ export async function performAutopost(client) {
     console.log(`📣 Sending to all Discord subscribers...`);
     let count = 0;
     const discordComment = "A new track for today! What do you think? 🤔";
-    const discordIdRegex = /^\d{17,19}$/; // Regex untuk memvalidasi format ID Discord
+    const discordIdRegex = /^\d{17,19}$/;
 
     for await (const [serverId, channelId] of db.iterator()) {
-       // FILTER BARU: Hanya proses key yang formatnya adalah ID Discord yang valid.
        if (!discordIdRegex.test(serverId)) {
          console.log(`🟡 Skipping non-server key from DB: "${serverId}"`);
          continue;
@@ -97,7 +104,7 @@ export async function performAutopost(client) {
             client, 
             comment: discordComment, 
             caption, 
-            imageUrl: finalImageUrl,
+            imageUrl: odesliData.imageUrl,
             imageBuffer,
             channelId 
         });
