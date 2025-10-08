@@ -3,7 +3,7 @@
 import fetch from "node-fetch";
 
 /**
- * Mengambil data lagu yang sudah bersih dengan memprioritaskan platform terbaik (Apple Music > Spotify > Default).
+ * Mengambil data lagu bersih dengan prioritas platform dan membersihkan nama artis di akhir.
  * @param {string} musicUrl - URL lagu dari YouTube Music.
  * @returns {Promise<object|null>} Objek berisi data lagu bersih atau null jika gagal.
  */
@@ -18,14 +18,14 @@ export const getOdesliData = async (musicUrl) => {
 
     let bestEntity = null;
 
-    // Prioritas 1: Cek apakah ada data dari Apple Music
+    // Prioritas 1: Apple Music
     const appleMusicLink = data.linksByPlatform.appleMusic;
     if (appleMusicLink) {
         bestEntity = data.entitiesByUniqueId[appleMusicLink.entityUniqueId];
         console.log("✅ Found clean data from Apple Music.");
     }
 
-    // Prioritas 2: Jika tidak ada dari Apple Music, cek Spotify
+    // Prioritas 2: Spotify
     if (!bestEntity) {
         const spotifyLink = data.linksByPlatform.spotify;
         if (spotifyLink) {
@@ -34,7 +34,7 @@ export const getOdesliData = async (musicUrl) => {
         }
     }
 
-    // Prioritas 3: Jika masih tidak ada, pakai data default dari Odesli
+    // Prioritas 3: Fallback ke data default
     if (!bestEntity) {
         bestEntity = data.entitiesByUniqueId[data.entityUniqueId];
         console.log("🟡 No Apple Music/Spotify data. Falling back to default Odesli entity.");
@@ -45,10 +45,14 @@ export const getOdesliData = async (musicUrl) => {
       return null;
     }
 
+       const cleanArtistName = bestEntity.artistName
+        .replace(/(\s*-\s*Topic|\s*Official\s*Channel|\s*VEVO|\s?Official)$/i, '')
+        .trim();
+
     return {
       pageUrl: data.pageUrl,
       title: bestEntity.title,
-      artist: bestEntity.artistName,
+      artist: cleanArtistName,
       imageUrl: bestEntity.thumbnailUrl,
     };
 
