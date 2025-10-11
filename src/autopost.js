@@ -8,6 +8,7 @@ import { generateCaption } from "./caption.js";
 import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { cropToSquare } from './imageProcessor.js';
+import { uploadToImgbb } from './imageUploader.js'; 
 
 dotenv.config();
 
@@ -41,33 +42,30 @@ async function getNextTrack() {
 }
 
 /**
- * Menjalankan seluruh proses autopost harian dengan alur baru.
+ * Menjalankan seluruh proses autopost harian.
  * @param {import('discord.js').Client} client - Instance client Discord.
  * @returns {Promise<boolean>} True jika berhasil, false jika gagal.
  */
-export async function performAutopost(client) {
+export async function performAutost(client) {
   try {
-    console.log("🚀 Starting daily autoposting task with Odesli workflow...");
+    console.log("🚀 Starting daily autoposting task...");
     
     const today = new Date();
     const diffTime = Math.abs(today - START_DATE);
     const dayNumber = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
     
-    // Langkah 1: Dapatkan track mentah dari playlist YouTube
     const initialTrack = await getNextTrack();
     if (!initialTrack) {
       console.error("❌ Could not get a track from playlist. Aborting autopost.");
       return false;
     }
     
-    // Langkah 2: Gunakan Odesli (Song.link) untuk mendapatkan data bersih dan cover art resmi
     const odesliData = await getOdesliData(initialTrack.url);
     if (!odesliData) {
       console.error(`❌ Odesli lookup failed for ${initialTrack.url}. Aborting autopost.`);
       return false;
     }
     
-    // Siapkan data final yang sudah bersih untuk bot presence
     const finalTrack = {
         name: odesliData.title,
         artist: odesliData.artist,
@@ -78,7 +76,10 @@ export async function performAutopost(client) {
     const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
     
     if (process.env.FACEBOOK_PAGE_ID) {
-        const postId = await postToFacebook(odesliData.imageUrl, caption, imageBuffer);
+        const imgbbUrl = await uploadToImgbb(imageBuffer);
+        const finalImageUrlForFacebook = imgbbUrl || odesliData.imageUrl;
+        const postId = await postToFacebook(finalImageUrlForFacebook, caption);
+
         if (postId) {
             console.log(`✅ Song & caption ready. FB Post ID: ${postId}`);
             const commentMessage = "What do you guys think of this track? Let me know below! 👇";
