@@ -46,7 +46,8 @@ async function getNextTrack() {
  * @param {import('discord.js').Client} client - Instance client Discord.
  * @returns {Promise<boolean>} True jika berhasil, false jika gagal.
  */
-export async function performAutost(client) {
+// --- TYPO DIPERBAIKI DI SINI ---
+export async function performAutopost(client) {
   try {
     console.log("🚀 Starting daily autoposting task...");
     
