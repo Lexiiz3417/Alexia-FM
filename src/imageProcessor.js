@@ -1,40 +1,34 @@
-// src/imageUploader.js
+// src/imageProcessor.js
+
 import fetch from 'node-fetch';
-import FormData from 'form-data';
+import sharp from 'sharp';
 
-// --- NAMA FUNGSI DIUBAH DI SINI ---
-export async function uploadToImgbb(imageBuffer) {
-  const apiKey = process.env.IMGBB_API_KEY;
-  if (!apiKey) {
-    console.warn("❗ IMGBB_API_KEY not found. Cannot upload image. Skipping.");
-    return null;
-  }
-  
-  if (!imageBuffer) {
-      console.warn("🟡 Image buffer is empty. Skipping upload.");
-      return null;
-  }
-
+/**
+ * Mengunduh gambar dan memotong bagian tengahnya menjadi persegi.
+ * @param {string} imageUrl URL gambar yang akan diproses.
+ * @returns {Promise<Buffer|null>} Buffer gambar yang sudah dipotong, atau null jika gagal.
+ */
+export async function cropToSquare(imageUrl) {
   try {
-    console.log("🚀 Uploading processed image to imgbb...");
-    const form = new FormData();
-    form.append('image', imageBuffer.toString('base64'));
+    const response = await fetch(imageUrl);
+    const originalBuffer = Buffer.from(await response.arrayBuffer());
 
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-      method: 'POST',
-      body: form,
-    });
+    const metadata = await sharp(originalBuffer).metadata();
 
-    const data = await response.json();
-    if (data.success) {
-      console.log(`✅ Image successfully uploaded to imgbb: ${data.data.url}`);
-      return data.data.url;
-    } else {
-      console.error('❌ Failed to upload to imgbb:', data.error.message);
-      return null;
-    }
+    const size = Math.min(metadata.width, metadata.height);
+
+    const top = Math.floor((metadata.height - size) / 2);
+    const left = Math.floor((metadata.width - size) / 2);
+
+    const croppedBuffer = await sharp(originalBuffer)
+      .extract({ left: left, top: top, width: size, height: size })
+      .png()
+      .toBuffer();
+      
+    return croppedBuffer;
+
   } catch (error) {
-    console.error('❌ Major error during imgbb upload:', error);
+    console.error('❌ Gagal memotong gambar dengan metode extract:', error);
     return null;
   }
 }
