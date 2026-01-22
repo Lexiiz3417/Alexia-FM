@@ -3,7 +3,6 @@
 [phases.setup]
 nixPkgs = [
     "nodejs", 
-    "npm", 
     "fontconfig", 
     "dejavu_fonts", 
     "freefont_ttf", 
