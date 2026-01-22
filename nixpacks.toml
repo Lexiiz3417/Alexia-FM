@@ -1,0 +1,14 @@
+# nixpacks.toml
+
+[phases.setup]
+nixPkgs = [
+    "nodejs", 
+    "npm", 
+    "fontconfig", 
+    "dejavu_fonts", 
+    "freefont_ttf", 
+    "google-fonts"
+]
+
+[start]
+cmd = "node src/index.js"
