@@ -5,81 +5,55 @@ import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence } from '../discord.js';
-import { cropToSquare } from '../imageProcessor.js';
+import { createMusicCard } from '../imageProcessor.js';
 
 let cachedPlaylist = [];
 let lastFetchTime = 0;
 
-/**
- * Mengambil satu track mentah acak dari playlist YouTube, dengan sistem cache.
- * @returns {Promise<object|null>} Objek track mentah atau null jika gagal.
- */
 async function getRandomTrackFromYT() {
     const now = Date.now();
     if (now - lastFetchTime > 3600000 || cachedPlaylist.length === 0) {
-        console.log("Music command cache expired or empty. Refetching playlist...");
         cachedPlaylist = await getPlaylistTracks();
         lastFetchTime = now;
     }
-    
-    if (cachedPlaylist.length === 0) return null;
-    
-    return cachedPlaylist[Math.floor(Math.random() * cachedPlaylist.length)];
+    return cachedPlaylist.length ? cachedPlaylist[Math.floor(Math.random() * cachedPlaylist.length)] : null;
 }
 
 export default {
-  data: new SlashCommandBuilder()
-    .setName('music')
-    .setDescription('Get a random music recommendation!'),
+  data: new SlashCommandBuilder().setName('music').setDescription('Get a random music recommendation!'),
 
   async execute(interaction) {
     try {
       await interaction.deferReply(); 
       
-      // Langkah 1: Dapatkan track mentah dari playlist YouTube
       const initialTrack = await getRandomTrackFromYT();
-      if (!initialTrack) {
-          return interaction.editReply({ content: 'Sorry, I couldn\'t fetch the playlist right now. Please try again later.' });
-      }
+      if (!initialTrack) return interaction.editReply({ content: 'Failed to fetch playlist.' });
 
-      // Langkah 2: Gunakan Odesli untuk mendapatkan data bersih
       const odesliData = await getOdesliData(initialTrack.url);
-      if (!odesliData) {
-        return interaction.editReply({ content: 'Oops! Failed to get detailed song info from Song.link. Please try again.' });
-      }
+      if (!odesliData) return interaction.editReply({ content: 'Failed to get song info.' });
       
-      const finalTrack = {
-        name: odesliData.title,
-        artist: odesliData.artist,
-      };
-
+      const finalTrack = { name: odesliData.title, artist: odesliData.artist };
       updateBotPresence(interaction.client, finalTrack); 
 
-      const imageBuffer = await cropToSquare(odesliData.imageUrl);
+      // --- PASS STRING INSTEAD OF NUMBER ---
+      const imageBuffer = await createMusicCard({
+          imageUrl: odesliData.imageUrl,
+          title: finalTrack.name,
+          artist: finalTrack.artist,
+          day: "RECOMMENDED" // <--- Teks kustom untuk command manual
+      });
       
-      const tempCaption = await generateCaption({ day: '✨', title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
-      const finalCaption = tempCaption.replace(/Day ✨ – /g, 'Music Pick');
+      const caption = await generateCaption({ day: '✨', title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
 
-      const embed = new EmbedBuilder()
-        .setColor('Random')
-        .setDescription(finalCaption)
-        .setTimestamp();
-      
-      const replyPayload = { embeds: [embed], fetchReply: true };
+      const embed = new EmbedBuilder().setColor('Random').setDescription(caption).setTimestamp();
+      const attachment = new AttachmentBuilder(imageBuffer, { name: 'card.png' });
+      embed.setImage('attachment://card.png');
 
-      if (imageBuffer) {
-        const attachment = new AttachmentBuilder(imageBuffer, { name: 'cover.png' });
-        embed.setImage('attachment://cover.png');
-        replyPayload.files = [attachment];
-      } else {
-        embed.setImage(odesliData.imageUrl); // Fallback jika cropping gagal
-      }
-
-      await interaction.editReply(replyPayload);
+      await interaction.editReply({ embeds: [embed], files: [attachment] });
 
     } catch (error) {
-      console.error("Error executing /music command:", error);
-      await interaction.editReply({ content: 'Oops! Something went wrong while fetching a song. Please try again later.' });
+      console.error("Error /music:", error);
+      await interaction.editReply({ content: 'Error.' });
     }
   }
 };
