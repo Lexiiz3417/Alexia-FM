@@ -78,21 +78,21 @@ export async function createMusicCard({ imageUrl, title, artist, day }) {
       .resize(COVER_SIZE, COVER_SIZE, { fit: 'cover' })
       .toBuffer();
 
-    // SVG with Watermark added
+    // UPDATE: Font Family diganti jadi 'Liberation Sans' biar mirip Arial
     const textSvg = `
       <svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}">
         <style>
-          .top-text { fill: #f1c40f; font-size: 28px; font-family: sans-serif; font-weight: bold; letter-spacing: 4px; }
-          .title { fill: #ffffff; font-size: 60px; font-family: sans-serif; font-weight: bold; }
-          .artist { fill: #cccccc; font-size: 40px; font-family: sans-serif; font-weight: normal; }
+          .top-text { fill: #f1c40f; font-size: 28px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: bold; letter-spacing: 4px; }
+          .title { fill: #ffffff; font-size: 60px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: bold; }
+          .artist { fill: #cccccc; font-size: 40px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: normal; }
           
           /* Style untuk Watermark */
           .watermark {
-            fill: rgba(255, 255, 255, 0.4); /* Putih transparan (40% opacity) */
+            fill: rgba(255, 255, 255, 0.4); 
             font-size: 22px;
-            font-family: sans-serif;
+            font-family: 'Liberation Sans', Arial, sans-serif;
             font-weight: normal;
-            text-anchor: end; /* Rata kanan */
+            text-anchor: end;
           }
         </style>
         

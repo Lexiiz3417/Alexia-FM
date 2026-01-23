@@ -4,7 +4,7 @@
 nixPkgs = [
     "nodejs", 
     "fontconfig", 
-    "dejavu_fonts" 
+    "liberation_ttf" 
 ]
 
 [start]
