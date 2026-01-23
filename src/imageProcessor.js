@@ -24,7 +24,7 @@ function wrapText(text, maxChars) {
 }
 
 /**
- * Creates a static music card with a watermark.
+ * Creates a static music card with a watermark using JetBrains Mono font.
  */
 export async function createMusicCard({ imageUrl, title, artist, day }) {
   try {
@@ -34,7 +34,9 @@ export async function createMusicCard({ imageUrl, title, artist, day }) {
     const CARD_WIDTH = 1200;
     const CARD_HEIGHT = 630;
     const COVER_SIZE = 450;
-    const MAX_TZ_CHARS = 18; 
+    
+    // JetBrains Mono is monospace, so we can fit slightly fewer chars per line visually
+    const MAX_TZ_CHARS = 16; 
     
     // Watermark Configuration
     const WATERMARK_TEXT = "@alexiazaphyra";
@@ -54,14 +56,15 @@ export async function createMusicCard({ imageUrl, title, artist, day }) {
     
     // Positioning
     let titleSvg = '';
-    let currentY = 250; // Start title here
+    let currentY = 250; 
     
     titleLines.forEach((line, index) => {
         if (index === 0) {
             titleSvg += `<tspan x="550" y="${currentY}">${line}</tspan>`;
         } else {
-            titleSvg += `<tspan x="550" dy="70">${line}</tspan>`;
-            currentY += 70;
+            // Line height slightly adjusted for monospace
+            titleSvg += `<tspan x="550" dy="75">${line}</tspan>`;
+            currentY += 75;
         }
     });
 
@@ -78,30 +81,47 @@ export async function createMusicCard({ imageUrl, title, artist, day }) {
       .resize(COVER_SIZE, COVER_SIZE, { fit: 'cover' })
       .toBuffer();
 
-    // UPDATE: Font Family diganti jadi 'Liberation Sans' biar mirip Arial
+    // UPDATE: Font Family set to 'JetBrains Mono'
+    // We use 'monospace' as fallback
     const textSvg = `
       <svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}">
         <style>
-          .top-text { fill: #f1c40f; font-size: 28px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: bold; letter-spacing: 4px; }
-          .title { fill: #ffffff; font-size: 60px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: bold; }
-          .artist { fill: #cccccc; font-size: 40px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: normal; }
+          /* Menggunakan JetBrains Mono */
+          .font-jb { font-family: 'JetBrains Mono', monospace; }
+
+          .top-text { 
+            fill: #f1c40f; 
+            font-size: 28px; 
+            font-weight: bold; 
+            letter-spacing: 4px; 
+          }
           
-          /* Style untuk Watermark */
+          .title { 
+            fill: #ffffff; 
+            font-size: 58px; /* Sedikit dikecilkan agar pas */
+            font-weight: 800; /* Extra Bold untuk kesan tebal */
+          }
+          
+          .artist { 
+            fill: #cccccc; 
+            font-size: 38px; 
+            font-weight: 600; /* Semi-Bold untuk nama artis */
+          }
+          
           .watermark {
             fill: rgba(255, 255, 255, 0.4); 
-            font-size: 22px;
-            font-family: 'Liberation Sans', Arial, sans-serif;
+            font-size: 20px;
             font-weight: normal;
             text-anchor: end;
           }
         </style>
         
-        <text x="550" y="180" class="top-text">${topText}</text>
+        <text x="550" y="180" class="font-jb top-text">${topText}</text>
 
-        <text class="title">${titleSvg}</text>
-        <text x="550" y="${artistY}" class="artist">${safeArtist}</text>
+        <text class="font-jb title">${titleSvg}</text>
+        <text x="550" y="${artistY}" class="font-jb artist">${safeArtist}</text>
 
-        <text x="1170" y="605" class="watermark">${WATERMARK_TEXT}</text>
+        <text x="1170" y="605" class="font-jb watermark">${WATERMARK_TEXT}</text>
       </svg>
     `;
 

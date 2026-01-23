@@ -4,7 +4,7 @@
 nixPkgs = [
     "nodejs", 
     "fontconfig", 
-    "liberation_ttf" 
+    "jetbrains-mono" 
 ]
 
 [start]
