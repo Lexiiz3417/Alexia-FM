@@ -8,12 +8,13 @@ import { generateCaption } from "./caption.js";
 import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { createMusicCard } from './imageProcessor.js'; 
-import { uploadToImgbb } from './imageUploader.js'; 
+// HAPUS import uploadToImgbb karena tidak dipakai lagi untuk FB
+// import { uploadToImgbb } from './imageUploader.js'; 
 
 dotenv.config();
 
 const db = new Keyv('sqlite://db.sqlite');
-const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
+const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
 
 async function getNextTrack() {
   let shuffledPlaylist = await db.get('shuffled_playlist');
@@ -50,23 +51,21 @@ export async function performAutopost(client) {
 
     updateBotPresence(client, finalTrack);
 
-    // --- PASS DAY NUMBER HERE ---
     const imageBuffer = await createMusicCard({
         imageUrl: odesliData.imageUrl,
         title: finalTrack.name,
         artist: finalTrack.artist,
-        day: dayNumber // <--- Tampilkan "DAY #123" di gambar
+        day: dayNumber
     });
 
     if (!imageBuffer) return false;
 
-    // Caption tetap pakai file default.txt
     const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
     
+    // --- UPDATE LOGIKA FACEBOOK ---
     if (process.env.FACEBOOK_PAGE_ID) {
-        const imgbbUrl = await uploadToImgbb(imageBuffer);
-        const finalImageUrlForFacebook = imgbbUrl || odesliData.imageUrl;
-        const postId = await postToFacebook(finalImageUrlForFacebook, caption);
+        // Langsung kirim Buffer, gak perlu upload ke ImgBB dulu!
+        const postId = await postToFacebook(imageBuffer, caption);
 
         if (postId) {
             console.log(`✅ FB Post ID: ${postId}`);

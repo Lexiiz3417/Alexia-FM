@@ -1,80 +1,98 @@
 // src/facebook.js
-import fetch from "node-fetch";
 
-const API_VERSION = process.env.FACEBOOK_API_VERSION || 'v23.0';
+import fetch from 'node-fetch';
+import FormData from 'form-data';
+
+const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
+const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
 /**
- * Memposting foto ke halaman Facebook menggunakan URL.
- * @param {string} imageUrl - URL gambar yang akan diposting (bisa dari Imgur/imgbb atau fallback).
- * @param {string} caption - Teks caption untuk postingan.
- * @returns {Promise<string|null>} ID postingan Facebook atau null jika gagal.
+ * Memposting gambar dan caption ke Facebook Page (Feed).
+ * Mendukung URL string maupun Buffer gambar.
+ * @param {string|Buffer} imageSource - URL gambar (string) atau Buffer gambar.
+ * @param {string} caption - Caption postingan.
+ * @returns {Promise<string|null>} ID postingan jika sukses, atau null jika gagal.
  */
-export const postToFacebook = async (imageUrl, caption) => {
-  const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
-  const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
-
-  if (!PAGE_ID) {
-    console.warn("❗ FACEBOOK_PAGE_ID not found. Facebook post skipped.");
-    return null; 
+export async function postToFacebook(imageSource, caption) {
+  if (!PAGE_ID || !ACCESS_TOKEN) {
+    console.warn("⚠️ Facebook Page ID or Access Token is missing. Skipping FB post.");
+    return null;
   }
 
+  const url = `https://graph.facebook.com/v18.0/${PAGE_ID}/photos`;
+  
   try {
-    const body = new URLSearchParams({
-      url: imageUrl,
-      caption: caption,
-      access_token: ACCESS_TOKEN,
+    const formData = new FormData();
+    formData.append('access_token', ACCESS_TOKEN);
+    formData.append('message', caption);
+    formData.append('published', 'true');
+
+    // LOGIKA BARU: Cek apakah inputnya Buffer atau URL
+    if (Buffer.isBuffer(imageSource)) {
+        // Jika Buffer, upload sebagai file
+        // 'file.png' adalah nama dummy, FB gak peduli namanya
+        formData.append('source', imageSource, { filename: 'image.png', contentType: 'image/png' });
+        console.log("🚀 Uploading image buffer directly to Facebook...");
+    } else {
+        // Jika URL, kirim sebagai parameter 'url'
+        formData.append('url', imageSource);
+        console.log("🚀 Sending image URL to Facebook...");
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      // Note: node-fetch + form-data otomatis set headers yang benar
     });
 
-    const response = await fetch(
-      `https://graph.facebook.com/${API_VERSION}/${PAGE_ID}/photos`,
-      {
-        method: "POST",
-        body: body,
-      }
-    );
+    const data = await response.json();
 
-    const postData = await response.json();
-    if (!response.ok || !postData.post_id) {
-      console.error("❌ Failed to post to Facebook feed:", postData);
+    if (data.error) {
+      console.error("❌ Failed to post to Facebook feed:", data);
       return null;
     }
 
-    console.log("✅ Successfully posted to Facebook feed! post_id:", postData.post_id);
-    return postData.post_id;
+    console.log(`✅ Successfully posted to Facebook feed! post_id: ${data.id}`);
+    return data.post_id; // Mengembalikan post_id (biasanya format: PAGEID_POSTID)
 
-  } catch (err) {
-    console.error("❌ Major error during Facebook post:", err);
+  } catch (error) {
+    console.error("❌ Error posting to Facebook:", error);
     return null;
   }
-};
+}
 
 /**
- * Menambahkan komentar pada postingan Facebook yang sudah ada.
- * @param {string} postId - ID dari postingan.
+ * Menambahkan komentar pada postingan yang sudah ada.
+ * @param {string} postId - ID postingan Facebook.
  * @param {string} message - Isi komentar.
  */
-export const commentOnPost = async (postId, message) => {
-  const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
+export async function commentOnPost(postId, message) {
+  if (!ACCESS_TOKEN || !postId) return;
+
+  // URL untuk posting komentar: /{post-id}/comments
+  const url = `https://graph.facebook.com/v18.0/${postId}/comments`;
 
   try {
-    const body = new URLSearchParams({
-        message,
-        access_token: ACCESS_TOKEN,
-    });
-      
-    const res = await fetch(`https://graph.facebook.com/${API_VERSION}/${postId}/comments`, {
-      method: "POST",
-      body: body,
+    // Untuk komentar teks biasa, kita bisa pake JSON body aja, lebih simpel
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: message,
+        access_token: ACCESS_TOKEN
+      })
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      console.error("❌ Failed to add comment:", data);
-      return;
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("❌ Failed to comment on Facebook post:", data);
+    } else {
+      console.log("💬 Successfully added engagement comment to Facebook post!");
     }
-
-    console.log("💬 Successfully added engagement comment to Facebook post!");
-  } catch (err) {
-    console.error("❌ Error while trying to comment on Facebook:", err);
+  } catch (error) {
+    console.error("❌ Error commenting on Facebook:", error);
   }
-};
+}

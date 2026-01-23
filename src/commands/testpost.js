@@ -6,7 +6,7 @@ import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence } from '../discord.js';
 import { createMusicCard } from '../imageProcessor.js';
-import { uploadToImgbb } from '../imageUploader.js'; 
+// Hapus import uploadToImgbb
 import { postToFacebook, commentOnPost } from '../facebook.js';
 
 async function getRandomTrack() {
@@ -36,12 +36,11 @@ export default {
       const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
       const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
-      // --- PASS DAY NUMBER ---
       const imageBuffer = await createMusicCard({
           imageUrl: odesliData.imageUrl,
           title: finalTrack.name,
           artist: finalTrack.artist,
-          day: dayNumber // <--- Tampilkan di gambar
+          day: dayNumber
       });
 
       if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
@@ -50,8 +49,8 @@ export default {
 
       let fbStatus = "Skipped";
       if (process.env.FACEBOOK_PAGE_ID) {
-          const imgbbUrl = await uploadToImgbb(imageBuffer);
-          const postId = await postToFacebook(imgbbUrl || odesliData.imageUrl, caption);
+          // UPDATE: Langsung kirim Buffer ke FB
+          const postId = await postToFacebook(imageBuffer, caption);
           if (postId) {
              fbStatus = `✅ ID: ${postId}`;
              await commentOnPost(postId, "Thoughts? 👇");
