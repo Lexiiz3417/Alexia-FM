@@ -13,7 +13,7 @@ import { uploadToImgbb } from './imageUploader.js';
 dotenv.config();
 
 const db = new Keyv('sqlite://db.sqlite');
-const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
+const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
 
 async function getNextTrack() {
   let shuffledPlaylist = await db.get('shuffled_playlist');

@@ -50,7 +50,7 @@ startDiscordBot(client);
 
 // Menjadwalkan tugas autoposting harian
 console.log("⏰ Autopost scheduled for 9:00 AM WIB daily.");
-cron.schedule('0 9 * * *', () => {
+cron.schedule('0 12 * * *', () => {
   console.log("Scheduler triggered! Running the autopost task...");
   // Panggil fungsi yang sudah di-import, dan berikan 'client' yang sudah siap
   performAutopost(client);
