@@ -3,7 +3,7 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import Keyv from 'keyv';
 
-const db = new Keyv('sqlite://db.sqlite');
+const db = new Keyv('sqlite://data/db.sqlite');
 
 export default {
   data: new SlashCommandBuilder()

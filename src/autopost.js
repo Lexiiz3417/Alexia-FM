@@ -8,7 +8,8 @@ import { generateCaption } from "./caption.js";
 import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { createMusicCard } from "./imageProcessor.js";
-import { getRandomComment } from "./commentGenerator.js"; 
+import { getRandomComment } from "./commentGenerator.js";
+
 dotenv.config();
 
 const db = new Keyv("sqlite://db.sqlite");
@@ -69,7 +70,7 @@ export async function performAutopost(client) {
       link: odesliData.pageUrl,
     });
 
-    // ✅ RANDOM ENGAGEMENT COMMENT (PAKAI AWAIT)
+    // ✅ RANDOM ENGAGEMENT COMMENT
     const engagementComment = await getRandomComment(
       finalTrack.name,
       finalTrack.artist
@@ -87,22 +88,29 @@ export async function performAutopost(client) {
 
     // --- DISCORD POSTING ---
     console.log("📣 Sending to Discord...");
-    const discordIdRegex = /^\d{17,19}$/;
+    const discordComment = "A new track for today! What do you think? 🤔";
 
-    for await (const [serverId, channelId] of db.iterator()) {
-      if (!discordIdRegex.test(serverId)) continue;
+    // Loop Database (Subscriber-based)
+    for await (const [key, value] of db.iterator()) {
+      // HANYA ambil data subscriber
+      if (key && key.startsWith("sub:")) {
+        const channelId = value; // value = Channel ID
 
-      try {
-        await sendAutoPostEmbed({
-          client,
-          comment: engagementComment, // ✅ sama dengan FB
-          caption,
-          imageUrl: odesliData.imageUrl,
-          imageBuffer,
-          channelId,
-        });
-      } catch (error) {
-        console.error(`Skipping server ${serverId}`, error);
+        try {
+          await sendAutoPostEmbed({
+            client,
+            comment: engagementComment, // sama dengan FB
+            caption,
+            imageUrl: odesliData.imageUrl,
+            imageBuffer,
+            channelId,
+          });
+        } catch (error) {
+          console.error(
+            `Skipping channel ${channelId} (Invalid/No Access)`,
+            error
+          );
+        }
       }
     }
 

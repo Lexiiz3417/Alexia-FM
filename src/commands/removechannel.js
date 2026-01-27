@@ -1,33 +1,25 @@
-import { SlashCommandBuilder } from 'discord.js';
+// src/commands/removechannel.js
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import Keyv from 'keyv';
 
-const db = new Keyv('sqlite://db.sqlite');
+const db = new Keyv('sqlite://data/db.sqlite');
 
-// Membungkus semuanya dalam satu 'export default'
 export default {
   data: new SlashCommandBuilder()
     .setName('removechannel')
-    .setDescription('Stop receiving daily music posts on this server.')
-    .setDefaultMemberPermissions('8'),
+    .setDescription('Stop daily music autopost for this server.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    // Di dalam command handler, kita tidak perlu cek permission lagi, karena sudah di-set di 'data'
-    const serverId = interaction.guildId;
-    const existingChannel = await db.get(serverId);
+    const guildId = interaction.guildId;
 
-    if (!existingChannel) {
-      return interaction.reply({
-        content: 'This server isn\'t set up to receive daily posts yet.',
-        ephemeral: true
-      });
+    try {
+        // Hapus berdasarkan Key Guild ID
+        await db.delete(`sub:${guildId}`);
+        await interaction.reply({ content: '🔕 Autopost has been disabled for this server.', ephemeral: true });
+    } catch (error) {
+        console.error(error);
+        await interaction.reply({ content: '❌ Error accessing database.', ephemeral: true });
     }
-
-    await db.delete(serverId);
-    
-    await interaction.reply({
-      content: 'Got it! This server will no longer receive daily music posts.',
-      ephemeral: true
-    });
-    console.log(`🗑️ Channel removed for server ${serverId}`);
   }
 };

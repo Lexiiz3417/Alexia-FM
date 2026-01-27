@@ -1,32 +1,40 @@
-import { SlashCommandBuilder, ChannelType } from 'discord.js';
+// src/commands/setchannel.js
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import Keyv from 'keyv';
 
-const db = new Keyv('sqlite://db.sqlite');
+const db = new Keyv('sqlite://data/db.sqlite');
 
-// Membungkus semuanya dalam satu 'export default'
 export default {
   data: new SlashCommandBuilder()
     .setName('setchannel')
-    .setDescription('Sets a channel to receive daily music posts.')
-    .setDefaultMemberPermissions('8')
+    .setDescription('Set the channel for daily music autopost.')
     .addChannelOption(option => 
-      option.setName('channel')
-        .setDescription('The channel to send daily posts to.')
-        .addChannelTypes(ChannelType.GuildText)
-        .setRequired(true)
-    ),
+        option.setName('channel')
+        .setDescription('The channel to send updates to')
+        .setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // Hanya Admin
 
   async execute(interaction) {
-    const targetChannel = interaction.options.getChannel('channel');
-    const serverId = interaction.guildId;
-    const channelId = targetChannel.id;
-    
-    await db.set(serverId, channelId);
-    
-    await interaction.reply({ 
-      content: `All set! The #${targetChannel.name} channel will now receive daily music posts from Alexia FM.`,
-      ephemeral: true
-    });
-    console.log(`✅ Channel set for server ${serverId}: ${channelId} (${targetChannel.name})`);
+    const channel = interaction.options.getChannel('channel');
+    const guildId = interaction.guildId;
+
+    // VALIDASI: Pastikan channel teks
+    if (!channel.isTextBased()) {
+        return interaction.reply({ content: '❌ Please select a text channel!', ephemeral: true });
+    }
+
+    try {
+        await interaction.deferReply({ ephemeral: true });
+
+        // LOGIKA BARU: Gunakan Guild ID sebagai Kunci (Key)
+        // Format Key: "sub:<guild_id>"
+        // Ini menjamin 1 Server hanya punya 1 Channel aktif.
+        await db.set(`sub:${guildId}`, channel.id);
+
+        await interaction.editReply(`✅ **Success!** Daily music will be posted in ${channel}. (Previous settings for this server were overwritten)`);
+    } catch (error) {
+        console.error(error);
+        await interaction.editReply('❌ Database error.');
+    }
   }
 };
