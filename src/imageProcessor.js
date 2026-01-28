@@ -42,7 +42,7 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     // --- KONFIGURASI LAYOUT ---
     // REVISI FINAL:
     const MAX_TITLE_CHARS = 15;  
-    const MAX_ARTIST_CHARS = 28; 
+    const MAX_ARTIST_CHARS = 25; 
     const WATERMARK_TEXT = "@alexiazaphyra";
     
     // Sanitize text untuk SVG
