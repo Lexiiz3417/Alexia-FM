@@ -1,14 +1,17 @@
 // src/commands/testpost.js
 
-import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import Keyv from 'keyv'; // <-- TAMBAHAN: Buat baca database channel
 import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
-import { updateBotPresence } from '../discord.js';
+import { updateBotPresence, sendAutoPostEmbed } from '../discord.js'; // <-- Panggil fungsi kirim asli
 import { createMusicCard } from '../imageProcessor.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { getRandomComment } from '../commentGenerator.js'; 
-// import { postToTelegram } from '../telegram.js'; <--- KITA MATIKAN BARIS INI
+
+// Akses Database (Arahkan ke Volume)
+const db = new Keyv('sqlite://data/db.sqlite');
 
 async function getRandomTrack() {
     const playlist = await getPlaylistTracks();
@@ -18,16 +21,15 @@ async function getRandomTrack() {
 export default {
   data: new SlashCommandBuilder()
     .setName('testpost')
-    .setDescription('OWNER ONLY: Simulate daily autopost with options.')
+    .setDescription('Simulate daily autopost (Sends REAL post to the configured channel).')
     .addStringOption(option =>
         option.setName('target')
-            .setDescription('Choose which platform to test')
+            .setDescription('Choose platform')
             .setRequired(false) 
             .addChoices(
-                { name: '🚀 All Platforms (FB + Discord)', value: 'all' }, // Updated Label
+                { name: '🚀 All Platforms', value: 'all' },
                 { name: '📘 Facebook Only', value: 'facebook' },
-                // { name: '✈️ Telegram Only', value: 'telegram' }, <--- HAPUS OPSI TELEGRAM
-                { name: '👾 Discord Generation Only', value: 'discord' }
+                { name: '👾 Discord Only', value: 'discord' }
             )
     ),
 
@@ -36,8 +38,18 @@ export default {
 
     try {
       await interaction.deferReply(); 
+
+      // 1. CEK DATABASE CHANNEL (Wajib punya channel dulu)
+      // Kita ambil channel ID milik server ini
+      const savedChannelId = await db.get(`sub:${interaction.guildId}`);
       
-      // 1. Persiapan Data 
+      if (!savedChannelId) {
+          return interaction.editReply({ 
+              content: '❌ **Error:** No channel set for this server.\nPlease run `/setchannel` first to define where the post should go.' 
+          });
+      }
+
+      // 2. Persiapan Data Lagu
       const initialTrack = await getRandomTrack();
       if (!initialTrack) return interaction.editReply({ content: '❌ Failed to fetch track.' });
 
@@ -46,16 +58,14 @@ export default {
       
       const finalTrack = { name: odesliData.title, artist: odesliData.artist };
       
-      // Cek client sebelum update presence
-      if (interaction.client) {
-          updateBotPresence(interaction.client, finalTrack); 
-      }
+      // Update status bot sekalian
+      if (interaction.client) updateBotPresence(interaction.client, finalTrack); 
 
-      // Calc Day
+      // Hitung Hari
       const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
       const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
-      // 2. Generate Gambar & Teks
+      // 3. Generate Gambar & Caption
       const imageBuffer = await createMusicCard({
           imageUrl: odesliData.imageUrl,
           title: finalTrack.name,
@@ -68,17 +78,17 @@ export default {
       const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
       const engagementComment = await getRandomComment(finalTrack.name, finalTrack.artist);
 
-      // --- LOGIKA PEMILIHAN PLATFORM ---
+      // --- EKSEKUSI ---
       
       let fbStatus = "Skipped ⏩";
-      // let teleStatus = "Skipped ⏩"; <--- HAPUS STATUS TELE
+      let discordStatus = "Skipped ⏩";
 
-      // 3. Test FACEBOOK (Jika target 'all' atau 'facebook')
+      // A. FACEBOOK POST
       if (target === 'all' || target === 'facebook') {
           if (process.env.FACEBOOK_PAGE_ID) {
               const postId = await postToFacebook(imageBuffer, caption);
               if (postId) {
-                 fbStatus = `✅ ID: ${postId}`;
+                 fbStatus = `✅ Posted (ID: ${postId})`;
                  await commentOnPost(postId, engagementComment);
               } else fbStatus = "❌ Failed";
           } else {
@@ -86,35 +96,38 @@ export default {
           }
       }
 
-      /* // 4. Test TELEGRAM (DIBUANG DULU)
-      if (target === 'all' || target === 'telegram') {
-          if (process.env.TELEGRAM_BOT_TOKEN) {
-              const success = await postToTelegram(imageBuffer, caption, engagementComment);
-              teleStatus = success ? "✅ Sent" : "❌ Failed";
-          } else {
-              teleStatus = "⚠️ No Config";
-          }
+      // B. DISCORD POST (Output 2: The Real Post)
+      // Ini akan mengirim ke Channel yang sudah di-set, bukan ke channel tempat ngetik command
+      if (target === 'all' || target === 'discord') {
+         try {
+             await sendAutoPostEmbed({
+                 client: interaction.client,
+                 comment: engagementComment,
+                 caption: caption,
+                 imageUrl: odesliData.imageUrl,
+                 imageBuffer: imageBuffer,
+                 channelId: savedChannelId // <--- KIRIM KE SINI
+             });
+             discordStatus = `✅ Sent to <#${savedChannelId}>`;
+         } catch (err) {
+             discordStatus = `❌ Failed: ${err.message}`;
+         }
       }
-      */
 
-      // 5. Laporan ke Discord
+      // 5. Output 1: Laporan status ke User (Ephemeral report)
       const embed = new EmbedBuilder()
-        .setColor('Random')
-        .setTitle(`🧪 Test Result: ${target.toUpperCase()}`)
-        .setDescription(caption)
+        .setColor('Green')
+        .setTitle(`🧪 Autopost Simulation Complete`)
+        .setDescription(`**Day #${dayNumber}** - ${finalTrack.name}`)
         .addFields(
-            { name: 'Target Mode', value: target, inline: true },
-            { name: 'FB Status', value: fbStatus, inline: true },
-            // { name: 'Tele Status', value: teleStatus, inline: true }, <--- HAPUS
-            { name: 'Auto Comment', value: engagementComment, inline: false }
+            { name: 'Target Channel', value: `<#${savedChannelId}>`, inline: true },
+            { name: 'Discord Status', value: discordStatus, inline: true },
+            { name: 'Facebook Status', value: fbStatus, inline: true },
         )
-        .setFooter({ text: `Test Day #${dayNumber}` })
         .setTimestamp();
       
-      const attachment = new AttachmentBuilder(imageBuffer, { name: 'card.png' });
-      embed.setImage('attachment://card.png');
-
-      await interaction.editReply({ embeds: [embed], files: [attachment] });
+      // Kirim laporan teks saja (gambarnya kan udah dikirim ke channel tujuan)
+      await interaction.editReply({ embeds: [embed] });
 
     } catch (error) {
       console.error(error);
