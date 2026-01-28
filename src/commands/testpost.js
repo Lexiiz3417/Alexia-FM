@@ -9,7 +9,7 @@ import { updateBotPresence, sendAutoPostEmbed } from '../discord.js';
 import { createMusicCard } from '../imageProcessor.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { getRandomComment } from '../commentGenerator.js'; 
-import { postToTelegram } from '../telegram.js'; // <--- KITA PANGGIL LAGI
+import { postToTelegram } from '../telegram.js'; 
 
 const db = new Keyv('sqlite://data/db.sqlite');
 
@@ -21,7 +21,7 @@ async function getRandomTrack() {
 export default {
   data: new SlashCommandBuilder()
     .setName('testpost')
-    .setDescription('Simulate daily autopost (Sends REAL post to configured channels).')
+    .setDescription('🔒 OWNER ONLY: Simulate daily autopost.')
     .addStringOption(option =>
         option.setName('target')
             .setDescription('Choose platform')
@@ -29,18 +29,26 @@ export default {
             .addChoices(
                 { name: '🚀 All Platforms', value: 'all' },
                 { name: '📘 Facebook Only', value: 'facebook' },
-                { name: '✈️ Telegram Only', value: 'telegram' }, // <--- Opsi Tele Hidup Lagi
+                { name: '✈️ Telegram Only', value: 'telegram' }, 
                 { name: '👾 Discord Only', value: 'discord' }
             )
     ),
 
   async execute(interaction) {
+    // 1. SECURITY CHECK: Cuma OWNER yang boleh lewat
+    if (interaction.user.id !== process.env.OWNER_ID) {
+        return interaction.reply({ 
+            content: '⛔ **Access Denied.**\nThis command is restricted to the Bot Owner.', 
+            ephemeral: true 
+        });
+    }
+
+    // Kalau Owner, lanjut eksekusi tanpa limit...
     const target = interaction.options.getString('target') || 'all'; 
 
     try {
       await interaction.deferReply(); 
 
-      // Cek DB Channel Discord (Hanya warning kalau targetnya bukan Tele Only)
       const savedChannelId = await db.get(`sub:${interaction.guildId}`);
       if (!savedChannelId && target !== 'telegram' && target !== 'facebook') {
           return interaction.editReply({ 
@@ -61,6 +69,7 @@ export default {
       const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
       const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
+      // Generate Image (Pakai ImageProcessor yang baru diperbaiki)
       const imageBuffer = await createMusicCard({
           imageUrl: odesliData.imageUrl,
           title: finalTrack.name,
@@ -70,11 +79,10 @@ export default {
 
       if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
-      const caption = await generateCaption({ topText: `DAY #${dayNumber}`, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
+      const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
       const engagementComment = await getRandomComment(finalTrack.name, finalTrack.artist);
 
-      // --- EKSEKUSI ---
-      
+      // --- EKSEKUSI PLATFORM ---
       let fbStatus = "Skipped ⏩";
       let discordStatus = "Skipped ⏩";
       let teleStatus = "Skipped ⏩";
@@ -92,11 +100,11 @@ export default {
           }
       }
 
-      // B. TELEGRAM (Real Post)
+      // B. TELEGRAM
       if (target === 'all' || target === 'telegram') {
           if (process.env.TELEGRAM_BOT_TOKEN) {
               const success = await postToTelegram(imageBuffer, caption, engagementComment);
-              teleStatus = success ? "✅ Sent to Channel" : "❌ Failed";
+              teleStatus = success ? "✅ Sent" : "❌ Failed";
           } else {
               teleStatus = "⚠️ No Config";
           }

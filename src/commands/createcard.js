@@ -3,13 +3,10 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getOdesliData } from '../songlink.js';
 import { createMusicCard } from '../imageProcessor.js';
-import Keyv from 'keyv';
+import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; 
 
-// Koneksi Database User Usage
-const db = new Keyv('sqlite://data/db.sqlite');
-
-// --- KONFIGURASI LIMIT ---
-const DAILY_LIMIT = 3; // User biasa cuma boleh bikin 3 kartu sehari
+// KONFIGURASI LIMIT
+const DAILY_LIMIT = 3; 
 
 export default {
   data: new SlashCommandBuilder()
@@ -33,39 +30,20 @@ export default {
             .setRequired(false))
     .addStringOption(option => 
         option.setName('tag')
-            .setDescription('Top text (Default: SHARED)', )
+            .setDescription('Top text (Default: SHARED MUSIC)', )
             .setRequired(false)),
 
   async execute(interaction) {
-    const userId = interaction.user.id;
-    const ownerId = process.env.OWNER_ID;
+    // 1. CEK LIMIT DULU (Panggil Satpam)
+    // Pastikan file src/utils/limiter.js sudah dibuat ya!
+    const limitStatus = await checkUserLimit(interaction.user.id, 'createcard', DAILY_LIMIT);
     
-    // 1. CEK LIMIT & COOLDOWN (Kecuali Owner)
-    // Format Key Database: "limit:userID" -> { date: "2025-01-29", count: 1 }
-    if (userId !== ownerId) {
-        const todayStr = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
-        const userUsage = await db.get(`limit:${userId}`) || { date: todayStr, count: 0 };
-
-        // Reset jika ganti hari
-        if (userUsage.date !== todayStr) {
-            userUsage.date = todayStr;
-            userUsage.count = 0;
-        }
-
-        // Cek kuota
-        if (userUsage.count >= DAILY_LIMIT) {
-            return interaction.reply({ 
-                content: `⛔ **Quota Exceeded!**\nYou have used your **${DAILY_LIMIT} daily generations**.\nPlease wait until tomorrow or ask the Owner.`,
-                ephemeral: true // Cuma dia yang bisa liat pesan ini
-            });
-        }
-
-        // Simpan sementara (belum di-save ke DB, nanti pas sukses aja)
-        userUsage.count += 1;
-        // Kita simpan obj ini buat dipakai di akhir
-        interaction.client.tempUsage = userUsage; 
+    // Jika ditolak satpam (kuota habis & bukan owner), stop di sini.
+    if (!limitStatus.allowed) {
+        return interaction.reply({ content: limitStatus.message, ephemeral: true });
     }
 
+    // Defer reply karena proses generate gambar butuh waktu > 3 detik
     await interaction.deferReply();
 
     try {
@@ -80,12 +58,13 @@ export default {
         let finalArtist = "Unknown Artist";
         let finalImageUrl = null;
 
-        // Validasi Input
+        // Validasi Awal: Harus ada minimal satu sumber data (Link atau Gambar Manual)
         if (!songUrl && (!customImage || !customTitle)) {
             return interaction.editReply({ content: '❌ **Error:** Please provide either a **Song Link** OR upload an **Image + Title**.' });
         }
 
-        // 3. Fetch Data Link
+        // 3. Logika Pengambilan Data
+        // Skenario A: User kasih Link Lagu
         if (songUrl) {
             const odesliData = await getOdesliData(songUrl);
             if (odesliData) {
@@ -93,46 +72,50 @@ export default {
                 finalArtist = odesliData.artist;
                 finalImageUrl = odesliData.imageUrl;
             } else if (!customTitle) {
-                return interaction.editReply({ content: "❌ Couldn't fetch data from that link. Try entering Title manually." });
+                // Link rusak/tidak support, dan user tidak kasih judul manual
+                return interaction.editReply({ content: "❌ Couldn't fetch data from that link. Try entering Title & Image manually." });
             }
         }
 
-        // 4. Override Manual
+        // Skenario B: User kasih Input Manual (Timpa data otomatis)
         if (customTitle) finalTitle = customTitle;
         if (customArtist) finalArtist = customArtist;
-        if (customImage) finalImageUrl = customImage.url; 
+        if (customImage) finalImageUrl = customImage.url; // Gambar upload user prioritas utama
 
+        // Cek final apakah gambar berhasil didapat
         if (!finalImageUrl) {
-            return interaction.editReply({ content: "❌ No image source found. Please provide a link or upload an image." });
+            return interaction.editReply({ content: "❌ No image source found. Please provide a song link or upload an image." });
         }
 
-        // 5. Generate Kartu
+        // 4. Generate Kartu (Panggil ImageProcessor)
         const imageBuffer = await createMusicCard({
             imageUrl: finalImageUrl,
             title: finalTitle,
             artist: finalArtist,
-            topText: customTag 
+            topText: customTag // Mengirim teks custom (misal: "MY FAV")
         });
 
         if (!imageBuffer) {
-            return interaction.editReply({ content: '❌ Failed to generate image canvas.' });
+            return interaction.editReply({ content: '❌ Failed to generate image canvas. The image URL might be invalid.' });
         }
 
-        // 6. UPDATE DATABASE LIMIT (Hanya jika sukses & bukan Owner)
-        if (userId !== ownerId && interaction.client.tempUsage) {
-            await db.set(`limit:${userId}`, interaction.client.tempUsage);
-        }
+        // 5. SUKSES? POTONG KUOTA (Panggil Satpam lagi buat update DB)
+        await incrementUserLimit(interaction.user.id, 'createcard');
 
-        // 7. Kirim Hasil
+        // 6. Kirim Hasil ke Discord
         const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
         
-        // Info sisa kuota (opsional, biar user tau)
+        // Hitung sisa kuota untuk ditampilkan di footer
+        // Jika owner, limitStatus.usageCount mungkin 0, jadi kita handle tampilan khususnya
         let footerText = `Generated by ${interaction.user.username}`;
-        if (userId !== ownerId && interaction.client.tempUsage) {
-            const sisa = DAILY_LIMIT - interaction.client.tempUsage.count;
-            footerText += ` • Daily Quota: ${sisa}/${DAILY_LIMIT} left`;
-        } else if (userId === ownerId) {
+        
+        if (interaction.user.id === process.env.OWNER_ID) {
             footerText += ` • 👑 Owner Access`;
+        } else {
+            // Hitung sisa: Batas - (Pemakaian Sebelumnya + 1 yg barusan sukses)
+            const used = (limitStatus.usageCount || 0) + 1;
+            const left = Math.max(0, DAILY_LIMIT - used);
+            footerText += ` • Daily Quota: ${left}/${DAILY_LIMIT} left`;
         }
 
         const embed = new EmbedBuilder()
@@ -141,14 +124,13 @@ export default {
             .setFooter({ text: footerText });
 
         await interaction.editReply({ 
-            // content: `🎨 Here is your card!`, // Bisa dihapus biar bersih
             embeds: [embed],
             files: [attachment] 
         });
 
     } catch (error) {
-        console.error(error);
-        await interaction.editReply({ content: '❌ Something went wrong while creating the card.' });
+        console.error("Error in createcard:", error);
+        await interaction.editReply({ content: '❌ Something went wrong while processing your request.' });
     }
   }
 };

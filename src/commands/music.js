@@ -1,59 +1,57 @@
 // src/commands/music.js
 
-import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder } from 'discord.js';
 import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
-import { generateCaption } from '../caption.js';
-import { updateBotPresence } from '../discord.js';
-import { createMusicCard } from '../imageProcessor.js';
+import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; // <--- IMPORT SATPAM
 
-let cachedPlaylist = [];
-let lastFetchTime = 0;
-
-async function getRandomTrackFromYT() {
-    const now = Date.now();
-    if (now - lastFetchTime > 3600000 || cachedPlaylist.length === 0) {
-        cachedPlaylist = await getPlaylistTracks();
-        lastFetchTime = now;
-    }
-    return cachedPlaylist.length ? cachedPlaylist[Math.floor(Math.random() * cachedPlaylist.length)] : null;
-}
+// LIMIT: 5x sehari (lebih longgar dari createcard karena cuma fetch teks/link)
+const MUSIC_LIMIT = 5; 
 
 export default {
-  data: new SlashCommandBuilder().setName('music').setDescription('Get a random music recommendation!'),
+  data: new SlashCommandBuilder()
+    .setName('music')
+    .setDescription('Get a random music recommendation from the curated playlist.'),
 
   async execute(interaction) {
+    // 1. CEK LIMIT DULU
+    const limitStatus = await checkUserLimit(interaction.user.id, 'music', MUSIC_LIMIT);
+    
+    if (!limitStatus.allowed) {
+        return interaction.reply({ content: limitStatus.message, ephemeral: true });
+    }
+
+    await interaction.deferReply();
+
     try {
-      await interaction.deferReply(); 
-      
-      const initialTrack = await getRandomTrackFromYT();
-      if (!initialTrack) return interaction.editReply({ content: 'Failed to fetch playlist.' });
+        // Ambil lagu random
+        const playlist = await getPlaylistTracks();
+        if (!playlist || playlist.length === 0) {
+            return interaction.editReply('❌ Playlist is empty or cannot be reached.');
+        }
+        
+        const randomTrack = playlist[Math.floor(Math.random() * playlist.length)];
 
-      const odesliData = await getOdesliData(initialTrack.url);
-      if (!odesliData) return interaction.editReply({ content: 'Failed to get song info.' });
-      
-      const finalTrack = { name: odesliData.title, artist: odesliData.artist };
-      updateBotPresence(interaction.client, finalTrack); 
+        // Ambil Data Odesli (Link Universal)
+        const odesliData = await getOdesliData(randomTrack.url);
+        
+        if (!odesliData) {
+            return interaction.editReply(`🎵 **${randomTrack.title}** by ${randomTrack.artist}\n🔗 ${randomTrack.url}`);
+        }
 
-      // --- PASS STRING INSTEAD OF NUMBER ---
-      const imageBuffer = await createMusicCard({
-          imageUrl: odesliData.imageUrl,
-          title: finalTrack.name,
-          artist: finalTrack.artist,
-          day: "RECOMMENDED" // <--- Teks kustom untuk command manual
-      });
-      
-      const caption = await generateCaption({ day: '✨', title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
+        // 2. SUKSES? POTONG KUOTA
+        await incrementUserLimit(interaction.user.id, 'music');
 
-      const embed = new EmbedBuilder().setColor('Random').setDescription(caption).setTimestamp();
-      const attachment = new AttachmentBuilder(imageBuffer, { name: 'card.png' });
-      embed.setImage('attachment://card.png');
-
-      await interaction.editReply({ embeds: [embed], files: [attachment] });
+        // Kirim Hasil
+        const sisa = limitStatus.usageCount !== undefined ? (MUSIC_LIMIT - (limitStatus.usageCount + 1)) : '∞';
+        
+        await interaction.editReply({ 
+            content: `🎵 **Recommendation for You:**\n${odesliData.pageUrl}\n\n*Daily Quota: ${sisa}/${MUSIC_LIMIT}*` 
+        });
 
     } catch (error) {
-      console.error("Error /music:", error);
-      await interaction.editReply({ content: 'Error.' });
+        console.error(error);
+        await interaction.editReply('❌ Failed to fetch music.');
     }
   }
 };
