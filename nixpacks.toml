@@ -4,9 +4,9 @@
 nixPkgs = [
     "nodejs",
     "fontconfig",
-    "jetbrains-mono",    
-    "noto-fonts-cjk",    # <--- WAJIB: Untuk huruf Jepang/Cina/Korea
-    "noto-fonts-emoji"   # <--- WAJIB: Untuk render Emoji
+    "jetbrains-mono",
+    "noto-fonts-cjk-sans",   # <--- UPDATED: Changed from noto-fonts-cjk
+    "noto-fonts-emoji"
 ]
 
 [start]
