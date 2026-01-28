@@ -60,12 +60,12 @@ export async function performAutopost(client) {
         imageUrl: odesliData.imageUrl,
         title: finalTrack.name,
         artist: finalTrack.artist,
-        day: dayNumber
+        topText: `DAY #${dayNumber}`
     });
 
     if (!imageBuffer) return false;
 
-    const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
+    const caption = await generateCaption({ topText: `DAY #${dayNumber}`, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
     const engagementComment = await getRandomComment(finalTrack.name, finalTrack.artist);
 
     // --- 1. FACEBOOK POSTING ---
