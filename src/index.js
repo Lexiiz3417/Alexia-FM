@@ -2,58 +2,31 @@
 
 import dotenv from "dotenv";
 import cron from "node-cron";
-import { Client, GatewayIntentBits, Collection } from 'discord.js';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
-// Impor fungsi-fungsi dari file lain
 import { startDiscordBot } from "./discord.js";
 import { keepAlive } from './keep_alive.js';
-import { performAutopost } from './autopost.js'; // <-- Impor fungsi autopost dari file barunya
+import { performAutopost } from './autopost.js';
 
 dotenv.config();
 
-// =================================================================
-// BAGIAN INI BERTUGAS MEMBUAT BOT DAN MEMUAT SEMUA COMMAND
-// =================================================================
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+console.log("🔥 Alexia FM Bot Service Starting...");
 
-client.commands = new Collection();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  const fileURL = pathToFileURL(filePath);
-  const { default: command } = await import(fileURL);
-  
-  if ('data' in command && 'execute' in command) {
-    client.commands.set(command.data.name, command);
-    console.log(`✅ Loaded command: /${command.data.name}`);
-  } else {
-    console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-  }
-}
-// =================================================================
-
-
-// --- BAGIAN UTAMA ---
-console.log("🔥 Alexia FM Bot Service Started (Professional Edition)...");
-
-// Menjalankan server kecil untuk keep-alive
+// 1. Jalankan Server Keep-Alive (Supaya bot gak mati di Railway)
 keepAlive();
 
-// Menjalankan dan login bot Discord dengan semua command yang sudah dimuat
-startDiscordBot(client); 
+// 2. Jalankan Bot Discord & Tangkap Client-nya
+// Kita pakai 'await' karena startDiscordBot itu async
+const client = await startDiscordBot();
 
-// Menjadwalkan tugas autoposting harian
-console.log("⏰ Autopost scheduled for 9:00 AM WIB daily.");
-cron.schedule('0 12 * * *', () => {
-  console.log("Scheduler triggered! Running the autopost task...");
-  // Panggil fungsi yang sudah di-import, dan berikan 'client' yang sudah siap
-  performAutopost(client);
+// 3. Jadwalkan Autopost
+console.log("⏰ Autopost scheduled for 09:00 AM WIB daily.");
+
+// Format Cron: Menit Jam * * * (0 9 = Jam 9:00 Pagi)
+cron.schedule('0 9 * * *', async () => {
+  console.log("🔔 Scheduler triggered! Running the autopost task...");
+  
+  // Panggil fungsi autopost dengan client yang sudah login
+  await performAutopost(client);
+  
 }, { 
   scheduled: true, 
   timezone: "Asia/Jakarta" 
