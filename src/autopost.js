@@ -9,11 +9,11 @@ import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { createMusicCard } from './imageProcessor.js'; 
 import { getRandomComment } from './commentGenerator.js'; 
-// import { postToTelegram } from "./telegram.js"; // (Uncomment jika pakai Telegram)
+import { postToTelegram } from "./telegram.js"; // <--- IMPORT TELEGRAM
 
 dotenv.config();
 
-// PERBAIKAN 1: Pastikan path database mengarah ke VOLUME (folder data)
+// Akses Database
 const db = new Keyv('sqlite://data/db.sqlite');
 
 const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
@@ -51,13 +51,9 @@ export async function performAutopost(client) {
     
     const finalTrack = { name: odesliData.title, artist: odesliData.artist };
 
-    // Update Status Bot (Listening to...)
-    // Pastikan 'client' valid sebelum dipanggil
     if (client) {
         await updateBotPresence(client, finalTrack);
         console.log(`✅ Status updated: Listening to ${finalTrack.name}`);
-    } else {
-        console.warn("⚠️ Client object is missing, skipping presence update.");
     }
 
     const imageBuffer = await createMusicCard({
@@ -72,7 +68,7 @@ export async function performAutopost(client) {
     const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
     const engagementComment = await getRandomComment(finalTrack.name, finalTrack.artist);
 
-    // --- FACEBOOK POSTING ---
+    // --- 1. FACEBOOK POSTING ---
     if (process.env.FACEBOOK_PAGE_ID) {
         const postId = await postToFacebook(imageBuffer, caption);
         if (postId) {
@@ -81,22 +77,18 @@ export async function performAutopost(client) {
         }
     }
 
-    // --- TELEGRAM POSTING (Opsional) ---
-    // if (process.env.TELEGRAM_BOT_TOKEN) {
-    //    await postToTelegram(imageBuffer, caption, engagementComment);
-    // }
+    // --- 2. TELEGRAM POSTING (BARU) ---
+    if (process.env.TELEGRAM_BOT_TOKEN) {
+       await postToTelegram(imageBuffer, caption, engagementComment);
+    }
 
-    // --- DISCORD POSTING ---
+    // --- 3. DISCORD POSTING ---
     console.log(`📣 Sending to Discord...`);
-    
-    // PERBAIKAN 2: Loop Database menggunakan logika prefix 'sub:'
-    // Logika lama (regex angka) dihapus karena subscriber sekarang disimpan sebagai "sub:12345"
     let successCount = 0;
 
     for await (const [key, value] of db.iterator()) {
-       // Cek apakah key diawali dengan "sub:"
        if (key && key.startsWith('sub:')) {
-           const channelId = value; // Value adalah Channel ID
+           const channelId = value;
            try {
             await sendAutoPostEmbed({ 
                 client, 
@@ -113,7 +105,7 @@ export async function performAutopost(client) {
        }
     }
     
-    console.log(`✅ Autopost Day #${dayNumber} completed. Sent to ${successCount} Discord channels.`);
+    console.log(`✅ Autopost Day #${dayNumber} completed.`);
     return true;
   } catch (err) {
     console.error("❌ Autopost Error:", err);
