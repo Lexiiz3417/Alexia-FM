@@ -8,7 +8,7 @@ import { updateBotPresence } from '../discord.js';
 import { createMusicCard } from '../imageProcessor.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { getRandomComment } from '../commentGenerator.js'; 
-import { postToTelegram } from '../telegram.js'; // Pastikan path import benar
+// import { postToTelegram } from '../telegram.js'; <--- KITA MATIKAN BARIS INI
 
 async function getRandomTrack() {
     const playlist = await getPlaylistTracks();
@@ -22,25 +22,22 @@ export default {
     .addStringOption(option =>
         option.setName('target')
             .setDescription('Choose which platform to test')
-            .setRequired(false) // Gak wajib, kalau kosong berarti "ALL"
+            .setRequired(false) 
             .addChoices(
-                { name: '🚀 All Platforms', value: 'all' },
+                { name: '🚀 All Platforms (FB + Discord)', value: 'all' }, // Updated Label
                 { name: '📘 Facebook Only', value: 'facebook' },
-                { name: '✈️ Telegram Only', value: 'telegram' },
+                // { name: '✈️ Telegram Only', value: 'telegram' }, <--- HAPUS OPSI TELEGRAM
                 { name: '👾 Discord Generation Only', value: 'discord' }
             )
     ),
 
   async execute(interaction) {
-    // Security Check (Opsional: Kalau mau hanya owner yg bisa)
-    // if (interaction.user.id !== process.env.OWNER_ID) return interaction.reply({ content: '⛔️', ephemeral: true });
-
-    const target = interaction.options.getString('target') || 'all'; // Default 'all'
+    const target = interaction.options.getString('target') || 'all'; 
 
     try {
       await interaction.deferReply(); 
       
-      // 1. Persiapan Data (Selalu jalan apapun opsinya)
+      // 1. Persiapan Data 
       const initialTrack = await getRandomTrack();
       if (!initialTrack) return interaction.editReply({ content: '❌ Failed to fetch track.' });
 
@@ -48,7 +45,11 @@ export default {
       if (!odesliData) return interaction.editReply({ content: '❌ Failed to fetch Odesli.' });
       
       const finalTrack = { name: odesliData.title, artist: odesliData.artist };
-      updateBotPresence(interaction.client, finalTrack); 
+      
+      // Cek client sebelum update presence
+      if (interaction.client) {
+          updateBotPresence(interaction.client, finalTrack); 
+      }
 
       // Calc Day
       const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
@@ -70,7 +71,7 @@ export default {
       // --- LOGIKA PEMILIHAN PLATFORM ---
       
       let fbStatus = "Skipped ⏩";
-      let teleStatus = "Skipped ⏩";
+      // let teleStatus = "Skipped ⏩"; <--- HAPUS STATUS TELE
 
       // 3. Test FACEBOOK (Jika target 'all' atau 'facebook')
       if (target === 'all' || target === 'facebook') {
@@ -85,7 +86,7 @@ export default {
           }
       }
 
-      // 4. Test TELEGRAM (Jika target 'all' atau 'telegram')
+      /* // 4. Test TELEGRAM (DIBUANG DULU)
       if (target === 'all' || target === 'telegram') {
           if (process.env.TELEGRAM_BOT_TOKEN) {
               const success = await postToTelegram(imageBuffer, caption, engagementComment);
@@ -94,8 +95,9 @@ export default {
               teleStatus = "⚠️ No Config";
           }
       }
+      */
 
-      // 5. Laporan ke Discord (Selalu dikirim sebagai bukti test)
+      // 5. Laporan ke Discord
       const embed = new EmbedBuilder()
         .setColor('Random')
         .setTitle(`🧪 Test Result: ${target.toUpperCase()}`)
@@ -103,7 +105,7 @@ export default {
         .addFields(
             { name: 'Target Mode', value: target, inline: true },
             { name: 'FB Status', value: fbStatus, inline: true },
-            { name: 'Tele Status', value: teleStatus, inline: true },
+            // { name: 'Tele Status', value: teleStatus, inline: true }, <--- HAPUS
             { name: 'Auto Comment', value: engagementComment, inline: false }
         )
         .setFooter({ text: `Test Day #${dayNumber}` })
