@@ -1,17 +1,17 @@
 // src/commands/music.js
 
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
-import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; // <--- IMPORT SATPAM
+import { createMusicCard } from '../imageProcessor.js'; // <--- Kembalikan fitur gambar
+import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; 
 
-// LIMIT: 5x sehari (lebih longgar dari createcard karena cuma fetch teks/link)
-const MUSIC_LIMIT = 5; 
+const MUSIC_LIMIT = 5; // Batas kuota harian
 
 export default {
   data: new SlashCommandBuilder()
     .setName('music')
-    .setDescription('Get a random music recommendation from the curated playlist.'),
+    .setDescription('Get a random aesthetic music recommendation.'),
 
   async execute(interaction) {
     // 1. CEK LIMIT DULU
@@ -24,7 +24,7 @@ export default {
     await interaction.deferReply();
 
     try {
-        // Ambil lagu random
+        // 2. Ambil Lagu Random dari Playlist
         const playlist = await getPlaylistTracks();
         if (!playlist || playlist.length === 0) {
             return interaction.editReply('❌ Playlist is empty or cannot be reached.');
@@ -32,26 +32,53 @@ export default {
         
         const randomTrack = playlist[Math.floor(Math.random() * playlist.length)];
 
-        // Ambil Data Odesli (Link Universal)
+        // 3. Ambil Data Odesli (Link Universal & Gambar HD)
         const odesliData = await getOdesliData(randomTrack.url);
         
-        if (!odesliData) {
-            return interaction.editReply(`🎵 **${randomTrack.title}** by ${randomTrack.artist}\n🔗 ${randomTrack.url}`);
+        // Data Fallback kalau Odesli gagal
+        const finalTitle = odesliData ? odesliData.title : randomTrack.title;
+        const finalArtist = odesliData ? odesliData.artist : randomTrack.artist;
+        const finalImage = odesliData ? odesliData.imageUrl : randomTrack.thumbnails[randomTrack.thumbnails.length - 1].url;
+        const finalLink = odesliData ? odesliData.pageUrl : randomTrack.url;
+
+        // 4. GENERATE GAMBAR KARTU 
+        const imageBuffer = await createMusicCard({
+            imageUrl: finalImage,
+            title: finalTitle,
+            artist: finalArtist,
+            topText: "RECOMMENDED" // Tag khusus buat command ini
+        });
+
+        if (!imageBuffer) {
+            return interaction.editReply(`🎵 **${finalTitle}**\n🔗 ${finalLink}\n*(Image generation failed)*`);
         }
 
-        // 2. SUKSES? POTONG KUOTA
+        // 5. SUKSES? POTONG KUOTA
         await incrementUserLimit(interaction.user.id, 'music');
 
-        // Kirim Hasil
-        const sisa = limitStatus.usageCount !== undefined ? (MUSIC_LIMIT - (limitStatus.usageCount + 1)) : '∞';
+        // 6. Kirim Hasil (Gambar + Embed)
+        const attachment = new AttachmentBuilder(imageBuffer, { name: 'recommendation.png' });
         
+        // Hitung sisa kuota
+        const sisa = limitStatus.usageCount !== undefined ? (MUSIC_LIMIT - (limitStatus.usageCount + 1)) : '∞';
+        const footerText = `Music Discovery • Daily Quota: ${sisa}/${MUSIC_LIMIT}`;
+
+        const embed = new EmbedBuilder()
+            .setColor('Random')
+            .setTitle(`🎵 ${finalTitle} - ${finalArtist}`)
+            .setURL(finalLink)
+            .setImage('attachment://recommendation.png')
+            .setFooter({ text: footerText });
+
         await interaction.editReply({ 
-            content: `🎵 **Recommendation for You:**\n${odesliData.pageUrl}\n\n*Daily Quota: ${sisa}/${MUSIC_LIMIT}*` 
+            content: `Here is a random pick for you, ${interaction.user}!`,
+            embeds: [embed], 
+            files: [attachment] 
         });
 
     } catch (error) {
-        console.error(error);
-        await interaction.editReply('❌ Failed to fetch music.');
+        console.error("Error in /music:", error);
+        await interaction.editReply('❌ Failed to fetch music recommendation.');
     }
   }
 };
