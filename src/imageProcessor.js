@@ -12,7 +12,7 @@ function wrapText(text, maxChars) {
   let currentLine = words[0];
 
   for (let i = 1; i < words.length; i++) {
-    // Cek apakah kalau ditambah kata berikutnya masih muat?
+    // Cek apakah kalau ditambah kata berikutnya masih muat dalam batas karakter?
     if (currentLine.length + 1 + words[i].length <= maxChars) {
       currentLine += ' ' + words[i];
     } else {
@@ -26,7 +26,7 @@ function wrapText(text, maxChars) {
 
 /**
  * Membuat Kartu Musik Estetik (Sharp + SVG Overlay)
- * Fitur: Blur Mulus, Support Kanji, Layout Rapi.
+ * Fitur: Blur Mulus, Support Kanji, Layout Rapi (Judul & Artis di-wrap).
  */
 export async function createMusicCard({ imageUrl, title, artist, topText }) {
   try {
@@ -40,8 +40,9 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     const COVER_SIZE = 450;
     
     // --- KONFIGURASI LAYOUT ---
-    // REVISI PENTING: Turunkan dari 16 ke 13 agar teks tidak mepet kanan!
-    const MAX_TITLE_CHARS = 13; 
+    // REVISI FINAL:
+    const MAX_TITLE_CHARS = 15;  
+    const MAX_ARTIST_CHARS = 28; 
     const WATERMARK_TEXT = "@alexiazaphyra";
     
     // Sanitize text untuk SVG
@@ -49,41 +50,56 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     const safeTitle = sanitize(title);
     const safeArtist = sanitize(artist);
 
-    // Logic Top Text (Day Number / Custom Tag)
+    // Logic Top Text
     let headerText = "NOW PLAYING";
     if (topText) {
          if (!isNaN(topText) || typeof topText === 'number') {
              headerText = `DAY #${topText}`;
          } else {
-             // Kalau user ngetik manual, pastikan formatnya rapi
              headerText = topText.toUpperCase().startsWith("DAY #") ? topText.toUpperCase() : topText.toUpperCase();
          }
     }
 
-    // Wrap Title (Judul Panjang turun ke bawah)
+    // --- PROSES WRAPPING TEKS (JUDUL & ARTIS) ---
+
+    // 1. Wrap Judul
     const titleLines = wrapText(safeTitle, MAX_TITLE_CHARS);
-    
-    // Susun baris judul di SVG
     let titleSvg = '';
-    let currentY = 250; 
+    let currentY = 250; // Posisi Y awal judul
     
     titleLines.forEach((line, index) => {
         if (index === 0) {
             titleSvg += `<tspan x="550" y="${currentY}">${line}</tspan>`;
         } else {
-            // Jarak antar baris judul
-            titleSvg += `<tspan x="550" dy="80">${line}</tspan>`;
+            titleSvg += `<tspan x="550" dy="80">${line}</tspan>`; // Jarak antar baris judul
             currentY += 80;
         }
     });
 
-    const artistY = currentY + 60; // Jarak Nama Artis dari Judul terakhir
+    // 2. Wrap Artis (INI PERBAIKAN UTAMANYA)
+    let artistY = currentY + 60; // Jarak awal Artis dari Judul terakhir
+    const artistLines = wrapText(safeArtist, MAX_ARTIST_CHARS);
+    let artistSvg = '';
 
-    // 2. BACKGROUND PROCESSING (Blur effect)
+    artistLines.forEach((line, index) => {
+        if (index === 0) {
+            // Baris pertama artis
+            artistSvg += `<tspan x="550" y="${artistY}">${line}</tspan>`;
+        } else {
+            // Baris kedua dst. (dy lebih kecil karena font lebih kecil)
+            artistSvg += `<tspan x="550" dy="50">${line}</tspan>`;
+            // Kita tidak perlu update artistY lagi karena dy sudah menanganinya relatif
+        }
+    });
+
+
+    // --- PROSES GAMBAR ---
+
+    // 2. BACKGROUND PROCESSING (Blur effect mulus pake Sharp)
     const background = await sharp(originalBuffer)
       .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'cover' })
-      .blur(40) // Blur level tinggi (dijamin mulus)
-      .modulate({ brightness: 0.6 }) // Gelapkan background
+      .blur(40)
+      .modulate({ brightness: 0.6 })
       .toBuffer();
 
     // 3. FOREGROUND (Cover Album Asli)
@@ -101,29 +117,16 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
           }
 
           .top-text { 
-            fill: #f1c40f; /* Emas */
-            font-size: 28px; 
-            font-weight: bold; 
-            letter-spacing: 4px; 
+            fill: #f1c40f; font-size: 28px; font-weight: bold; letter-spacing: 4px; 
           }
-          
           .title { 
-            fill: #ffffff; /* Putih */
-            font-size: 65px; 
-            font-weight: 800; 
+            fill: #ffffff; font-size: 65px; font-weight: 800; 
           }
-          
           .artist { 
-            fill: #cccccc; /* Abu-abu */
-            font-size: 40px; 
-            font-weight: 600; 
+            fill: #cccccc; font-size: 40px; font-weight: 600; 
           }
-          
           .watermark {
-            fill: rgba(255, 255, 255, 0.4); 
-            font-size: 20px;
-            font-weight: normal;
-            text-anchor: end;
+            fill: rgba(255, 255, 255, 0.4); font-size: 20px; font-weight: normal; text-anchor: end;
           }
         </style>
         
@@ -131,7 +134,7 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
 
         <text class="font-style title">${titleSvg}</text>
         
-        <text x="550" y="${artistY}" class="font-style artist">${safeArtist}</text>
+        <text class="font-style artist">${artistSvg}</text>
 
         <text x="1150" y="605" class="font-style watermark">${WATERMARK_TEXT}</text>
       </svg>
@@ -154,14 +157,11 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
   }
 }
 
-// Fungsi crop lama (disimpan aja buat jaga-jaga)
+// Fungsi crop lama
 export async function cropToSquare(imageUrl) {
     try {
         const response = await fetch(imageUrl);
         const originalBuffer = Buffer.from(await response.arrayBuffer());
-        return await sharp(originalBuffer)
-            .resize(500, 500, { fit: 'cover' })
-            .png()
-            .toBuffer();
+        return await sharp(originalBuffer).resize(500, 500, { fit: 'cover' }).png().toBuffer();
     } catch (e) { return null; }
 }
