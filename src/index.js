@@ -18,10 +18,9 @@ keepAlive();
 const client = await startDiscordBot();
 
 // 3. Jadwalkan Autopost
-console.log("⏰ Autopost scheduled for 09:00 AM WIB daily.");
+console.log("⏰ Autopost scheduled for 12 PM WIB daily.");
 
-// Format Cron: Menit Jam * * * (0 9 = Jam 9:00 Pagi)
-cron.schedule('0 9 * * *', async () => {
+cron.schedule('0 12 * * *', async () => {
   console.log("🔔 Scheduler triggered! Running the autopost task...");
   
   // Panggil fungsi autopost dengan client yang sudah login

@@ -9,14 +9,14 @@ import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { createMusicCard } from './imageProcessor.js'; 
 import { getRandomComment } from './commentGenerator.js'; 
-import { postToTelegram } from "./telegram.js"; // <--- IMPORT TELEGRAM
+import { postToTelegram } from "./telegram.js"; 
 
 dotenv.config();
 
 // Akses Database
 const db = new Keyv('sqlite://data/db.sqlite');
 
-const START_DATE = new Date(process.env.START_DATE || "2025-07-19");
+const START_DATE = new Date(process.env.START_DATE || "2026-1-23");
 
 async function getNextTrack() {
   let shuffledPlaylist = await db.get('shuffled_playlist');
