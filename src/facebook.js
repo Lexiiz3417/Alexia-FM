@@ -3,96 +3,113 @@
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 
+// Ambil Env Vars di awal biar rapi
 const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
 const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
 /**
- * Memposting gambar dan caption ke Facebook Page (Feed).
- * Mendukung URL string maupun Buffer gambar.
- * @param {string|Buffer} imageSource - URL gambar (string) atau Buffer gambar.
- * @param {string} caption - Caption postingan.
- * @returns {Promise<string|null>} ID postingan jika sukses, atau null jika gagal.
+ * Helper: Tidur sebentar (Delay)
  */
-export async function postToFacebook(imageSource, caption) {
-  if (!PAGE_ID || !ACCESS_TOKEN) {
-    console.warn("⚠️ Facebook Page ID or Access Token is missing. Skipping FB post.");
-    return null;
-  }
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  const url = `https://graph.facebook.com/v18.0/${PAGE_ID}/photos`;
-  
-  try {
-    const formData = new FormData();
-    formData.append('access_token', ACCESS_TOKEN);
-    formData.append('message', caption);
-    formData.append('published', 'true');
-
-    // LOGIKA BARU: Cek apakah inputnya Buffer atau URL
-    if (Buffer.isBuffer(imageSource)) {
-        // Jika Buffer, upload sebagai file
-        // 'file.png' adalah nama dummy, FB gak peduli namanya
-        formData.append('source', imageSource, { filename: 'image.png', contentType: 'image/png' });
-        console.log("🚀 Uploading image buffer directly to Facebook...");
-    } else {
-        // Jika URL, kirim sebagai parameter 'url'
-        formData.append('url', imageSource);
-        console.log("🚀 Sending image URL to Facebook...");
+/**
+ * Helper: Fetch dengan Retry Mechanism
+ * Mencegah error ETIMEDOUT dengan mencoba ulang sampai 3x
+ */
+async function fetchWithRetry(url, options, retries = 3, backoff = 2000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            // Kalau server FB lagi down (5xx) atau error lain, throw error biar di-retry
+            if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+            return response;
+        } catch (err) {
+            console.warn(`⚠️ [FB Retry] Attempt ${i + 1} failed. Retrying in ${backoff/1000}s... Reason: ${err.message}`);
+            if (i === retries - 1) throw err; // Menyerah setelah 3x percobaan
+            await sleep(backoff);
+            backoff *= 2; // Tunggu makin lama (2s, 4s, 8s...)
+        }
     }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      // Note: node-fetch + form-data otomatis set headers yang benar
-    });
-
-    const data = await response.json();
-
-    if (data.error) {
-      console.error("❌ Failed to post to Facebook feed:", data);
-      return null;
-    }
-
-    console.log(`✅ Successfully posted to Facebook feed! post_id: ${data.id}`);
-    return data.post_id; // Mengembalikan post_id (biasanya format: PAGEID_POSTID)
-
-  } catch (error) {
-    console.error("❌ Error posting to Facebook:", error);
-    return null;
-  }
 }
 
 /**
- * Menambahkan komentar pada postingan yang sudah ada.
- * @param {string} postId - ID postingan Facebook.
- * @param {string} message - Isi komentar.
+ * Memposting gambar ke Facebook dengan fitur Retry & Support Buffer/URL
+ */
+export async function postToFacebook(imageSource, caption) {
+    if (!PAGE_ID || !ACCESS_TOKEN) {
+        console.warn("⚠️ Facebook Config missing. Skipping FB post.");
+        return null;
+    }
+
+    const url = `https://graph.facebook.com/v18.0/${PAGE_ID}/photos`;
+
+    try {
+        const formData = new FormData();
+        formData.append('access_token', ACCESS_TOKEN);
+        formData.append('message', caption);
+        formData.append('published', 'true');
+
+        if (Buffer.isBuffer(imageSource)) {
+            // Upload File (Buffer)
+            formData.append('source', imageSource, { filename: 'image.png', contentType: 'image/png' });
+            console.log("🚀 Uploading image buffer to Facebook (with retry)...");
+        } else {
+            // Upload URL
+            formData.append('url', imageSource);
+            console.log("🚀 Sending image URL to Facebook (with retry)...");
+        }
+
+        // --- ACTION: PAKE RETRY ---
+        const response = await fetchWithRetry(url, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            console.error("❌ FB API Rejected:", data.error);
+            return null;
+        }
+
+        // API Facebook mengembalikan 'id' (format: PAGEID_POSTID)
+        if (data.id) {
+            console.log(`✅ Successfully posted to Facebook! ID: ${data.id}`);
+            return data.id; 
+        }
+
+        return null;
+
+    } catch (error) {
+        console.error("❌ Final Error posting to Facebook:", error.message);
+        return null;
+    }
+}
+
+/**
+ * Comment dengan Retry
  */
 export async function commentOnPost(postId, message) {
-  if (!ACCESS_TOKEN || !postId) return;
+    if (!ACCESS_TOKEN || !postId) return;
 
-  // URL untuk posting komentar: /{post-id}/comments
-  const url = `https://graph.facebook.com/v18.0/${postId}/comments`;
+    const url = `https://graph.facebook.com/v18.0/${postId}/comments`;
 
-  try {
-    // Untuk komentar teks biasa, kita bisa pake JSON body aja, lebih simpel
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        message: message,
-        access_token: ACCESS_TOKEN
-      })
-    });
+    try {
+        // Kita pakai JSON Body seperti kode awalmu (lebih rapi untuk teks panjang)
+        const bodyData = {
+            message: message,
+            access_token: ACCESS_TOKEN
+        };
 
-    const data = await response.json();
+        await fetchWithRetry(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyData)
+        });
 
-    if (data.error) {
-      console.error("❌ Failed to comment on Facebook post:", data);
-    } else {
-      console.log("💬 Successfully added engagement comment to Facebook post!");
+        console.log("💬 Successfully commented on FB post!");
+
+    } catch (error) {
+        console.error("❌ Failed to comment on FB post:", error.message);
     }
-  } catch (error) {
-    console.error("❌ Error commenting on Facebook:", error);
-  }
 }
