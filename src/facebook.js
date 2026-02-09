@@ -73,7 +73,7 @@ export async function postToFacebook(imageSource, caption) {
         }
 
         // API Facebook mengembalikan 'id' (format: PAGEID_POSTID)
-        if (data.id) {
+         if (data.id) {
             console.log(`✅ Successfully posted to Facebook! ID: ${data.id}`);
             return data.id; 
         }
