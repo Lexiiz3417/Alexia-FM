@@ -8,10 +8,9 @@ import { getRandomComment } from '../commentGenerator.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { postToTelegram } from '../telegram.js';
 
-// HILANGKAN kata 'export' di sini, ganti jadi const biasa
 const data = new SlashCommandBuilder()
     .setName('manualpost')
-    .setDescription('Post manual untuk menambal Day # yang bolong')
+    .setDescription('Post manual untuk menambal Day # yang bolong (OWNER ONLY)')
     .addStringOption(option =>
         option.setName('url')
             .setDescription('Link lagu (YouTube/Spotify/Apple Music)')
@@ -31,8 +30,17 @@ const data = new SlashCommandBuilder()
                 { name: '👾 Discord Saja', value: 'discord' }
             ));
 
-// HILANGKAN kata 'export' di sini juga, ganti jadi async function biasa
 async function execute(interaction) {
+    // --- OWNER CHECK ---
+    const OWNER_ID = process.env.OWNER_ID; 
+
+    if (interaction.user.id !== OWNER_ID) {
+        return interaction.reply({ 
+            content: '⛔ **Akses Ditolak!** Command ini eksklusif cuma bisa dipakai sama Owner bot.', 
+            flags: ['Ephemeral'] 
+        });
+    }
+
     await interaction.deferReply({ flags: ['Ephemeral'] }); 
 
     const url = interaction.options.getString('url');
@@ -64,37 +72,40 @@ async function execute(interaction) {
         });
         const engagementComment = await getRandomComment(odesliData.title, odesliData.artist);
 
-        let fbStatus = "➖ Diabaikan (Bukan Target)";
-        let teleStatus = "➖ Diabaikan (Bukan Target)";
-        let discordStatus = "➖ Diabaikan (Bukan Target)";
+        let fbStatus = "➖ *Diabaikan*";
+        let teleStatus = "➖ *Diabaikan*";
+        let discordStatus = "➖ *Diabaikan*";
 
+        // Eksekusi FB
         if (target === 'all' || target === 'facebook') {
             if (process.env.FACEBOOK_PAGE_ID) {
                 const postId = await postToFacebook(imageBuffer, caption);
                 if (postId) {
-                    fbStatus = "✅ Sukses";
+                    fbStatus = "✅ **Sukses**";
                     await commentOnPost(postId, engagementComment);
                 } else {
-                    fbStatus = "❌ Gagal (Cek log Railway)";
+                    fbStatus = "❌ **Gagal** (Cek log)";
                 }
             } else {
-                fbStatus = "❌ Config Env FB Belum Diisi";
+                fbStatus = "⚠️ Config FB Kosong";
             }
         }
 
+        // Eksekusi Telegram
         if (target === 'all' || target === 'telegram') {
             if (process.env.TELEGRAM_BOT_TOKEN) {
                 try {
                     await postToTelegram(imageBuffer, caption, engagementComment);
-                    teleStatus = "✅ Sukses";
+                    teleStatus = "✅ **Sukses**";
                 } catch (e) {
-                    teleStatus = `❌ Gagal: ${e.message}`;
+                    teleStatus = `❌ **Gagal**`;
                 }
             } else {
-                teleStatus = "❌ Config Env Telegram Belum Diisi";
+                teleStatus = "⚠️ Config Telegram Kosong";
             }
         }
 
+        // Eksekusi Discord
         if (target === 'all' || target === 'discord') {
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
             const embed = new EmbedBuilder()
@@ -107,11 +118,29 @@ async function execute(interaction) {
                 embeds: [embed],
                 files: [attachment]
             });
-            discordStatus = "✅ Terkirim di channel ini";
+            discordStatus = "✅ **Terkirim di channel ini**";
         }
 
+        // --- BIKIN EMBED REPORT BIAR RAPI ---
+        const reportEmbed = new EmbedBuilder()
+            .setColor('#2ecc71') // Warna hijau sukses
+            .setTitle(`✅ Manual Post Selesai! (Day #${day})`)
+            .addFields(
+                { name: '🎵 Info Lagu', value: `**${odesliData.title}**\n*${odesliData.artist}*`, inline: false },
+                { name: '🎯 Target Distribusi', value: `\`${target.toUpperCase()}\``, inline: false },
+                { 
+                    name: '📊 Status Pengiriman', 
+                    value: `📘 **Facebook:** ${fbStatus}\n✈️ **Telegram:** ${teleStatus}\n👾 **Discord:** ${discordStatus}`, 
+                    inline: false 
+                }
+            )
+            .setFooter({ text: `Manual override executed by ${interaction.user.tag}` })
+            .setTimestamp();
+
+        // Kirim report berupa Embed
         await interaction.editReply({
-            content: `**✅ Manual Post untuk Day #${day} Selesai!**\n\n**Status Distribusi (Target: ${target.toUpperCase()}):**\n📘 Facebook: ${fbStatus}\n✈️ Telegram: ${teleStatus}\n👾 Discord: ${discordStatus}\n\n🎵 *Lagu:* ${odesliData.title} - ${odesliData.artist}`
+            content: '', // Kosongkan text raw
+            embeds: [reportEmbed]
         });
 
     } catch (error) {
