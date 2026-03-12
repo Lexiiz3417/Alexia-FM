@@ -1,6 +1,8 @@
 // src/recapGenerator.js
 
 import { createCanvas, loadImage, registerFont } from 'canvas';
+import sharp from 'sharp';
+import fetch from 'node-fetch';
 import { getOdesliData } from './songlink.js';
 import { getPlaylistTracks } from './ytmusic.js';
 import path from 'path';
@@ -16,7 +18,7 @@ try {
     console.error("❌ Gagal load font lokal:", e.message);
 }
 
-// Helper: Ambil Cover Juara 1
+// Helper 1: Cari Cover Juara 1
 async function getCoverWinner(title, artist) {
     if (!title || !artist) return null;
     try {
@@ -26,11 +28,44 @@ async function getCoverWinner(title, artist) {
             const sTitle = title.toLowerCase();
             return tTitle.includes(sTitle) || sTitle.includes(tTitle);
         });
-        if (found) return found.thumbnails[found.thumbnails.length - 1].url;
+        // Modifikasi dikit URL YouTube biar dapet resolusi HD
+        if (found) return found.thumbnails[found.thumbnails.length - 1].url.replace(/=w\d+-h\d+.*/, '=w1200-h1200-l100-rj');
 
         const searchData = await getOdesliData(`https://music.youtube.com/search?q=${encodeURIComponent(title + ' ' + artist)}`);
         return searchData?.imageUrl || null;
     } catch (e) { return null; }
+}
+
+// Helper 2: Sharp Converter (Ubah WebP ke PNG & Bikin Efek Blur)
+async function prepareImages(url) {
+    if (!url) return null;
+    try {
+        const res = await fetch(url);
+        const buffer = Buffer.from(await res.arrayBuffer());
+
+        // 1. Bikin gambar background jadi Blur & Gelap (Pakai Sharp)
+        const bgBuffer = await sharp(buffer)
+            .resize(800, 1000, { fit: 'cover' })
+            .blur(35) // Efek blur estetik
+            .modulate({ brightness: 0.45 }) // Digelapin dikit
+            .png() // Paksa jadi PNG biar Canvas nggak ngambek
+            .toBuffer();
+
+        // 2. Bikin gambar cover kotak tajam (Pakai Sharp)
+        const fgBuffer = await sharp(buffer)
+            .resize(320, 320, { fit: 'cover' })
+            .png()
+            .toBuffer();
+
+        // Ubah jadi format yang bisa dibaca Canvas
+        return {
+            bgImg: await loadImage(bgBuffer),
+            fgImg: await loadImage(fgBuffer)
+        };
+    } catch (e) {
+        console.error("Sharp Converter Error:", e.message);
+        return null;
+    }
 }
 
 // MESIN UTAMA: CANVAS
@@ -44,29 +79,23 @@ export async function generateRecapImage(type, songs) {
     const accentColor = '#FFD700';
     
     const topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
-    let winnerCoverImg = null;
+    let finalImages = null;
+    const defaultCoverUrl = 'https://i.ibb.co/3sX8HnM/alexia-default-cover.png'; // Placeholder kalau API mati
 
-    // --- 1. CARI COVER ATAU PAKAI PLACEHOLDER ---
-    // Kalau gagal cari dari API, kita pake logo default ini biar estetik
-    const defaultCoverUrl = 'https://i.ibb.co/3sX8HnM/alexia-default-cover.png'; // Bisa lu ganti URL logo bot lu
-
+    // --- 1. PROSES GAMBAR DENGAN SHARP ---
     if (topSong.title !== "Unknown") {
         let coverUrl = await getCoverWinner(topSong.title, topSong.artist);
-        if (!coverUrl) coverUrl = defaultCoverUrl; // Fallback kalau API gagal
-
-        try { 
-            winnerCoverImg = await loadImage(coverUrl); 
-        } catch (e) {
-            // Kalau gagal nge-load gambar dari URL (biasanya karena forbidden/error jaringan)
-            try { winnerCoverImg = await loadImage(defaultCoverUrl); } catch(err){}
-        }
+        
+        // Coba proses URL dari API
+        if (coverUrl) finalImages = await prepareImages(coverUrl);
+        
+        // Kalau gagal/error, pake cover default
+        if (!finalImages) finalImages = await prepareImages(defaultCoverUrl);
     }
 
-    // --- 2. GAMBAR BACKGROUND ---
-    if (winnerCoverImg) {
-        ctx.drawImage(winnerCoverImg, 0, 0, width, height);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; // Overlay digelapin dikit biar teks makin jelas
-        ctx.fillRect(0, 0, width, height);
+    // --- 2. RENDER BACKGROUND BLUR ---
+    if (finalImages && finalImages.bgImg) {
+        ctx.drawImage(finalImages.bgImg, 0, 0, width, height);
     } else {
         const grad = ctx.createLinearGradient(0, 0, 0, height);
         grad.addColorStop(0, '#0f0f0f');
@@ -89,12 +118,12 @@ export async function generateRecapImage(type, songs) {
     if (topSong.title !== "Unknown") {
         const coverSize = 320;
         const x = (width - coverSize) / 2;
-        const y = 160; // Naikkin dikit covernya
+        const y = 160;
 
-        if (winnerCoverImg) {
+        if (finalImages && finalImages.fgImg) {
             ctx.shadowBlur = 50; 
             ctx.shadowColor = 'rgba(255, 215, 0, 0.2)';
-            ctx.drawImage(winnerCoverImg, x, y, coverSize, coverSize);
+            ctx.drawImage(finalImages.fgImg, x, y, coverSize, coverSize);
             ctx.shadowBlur = 0;
         } else {
             ctx.fillStyle = '#333'; ctx.fillRect(x, y, coverSize, coverSize);
@@ -108,14 +137,13 @@ export async function generateRecapImage(type, songs) {
         ctx.font = `24px ${mainFont}`;
         ctx.fillText(topSong.artist, width / 2, 575);
         
-        // FIX: Hapus emoji 🔥 ganti pakai teks murni "TOP 1 • X PLAYS" biar gak Tofu
         ctx.fillStyle = accentColor;
         ctx.font = `bold 22px ${mainFont}`;
         ctx.fillText(`TOP 1 • ${topSong.play_count} PLAYS THIS ${type}`, width / 2, 615);
     }
 
     // --- 5. LIST RANKING ---
-    const listStartTop = 680; // Naikkin dikit listnya
+    const listStartTop = 680; 
     songs.slice(1).forEach((song, index) => {
         const rank = index + 2;
         const y = listStartTop + (index * 62);
@@ -141,10 +169,9 @@ export async function generateRecapImage(type, songs) {
         ctx.fillText(`${song.play_count || 0} PTS`, width - 110, y - 6);
     });
 
-    // --- 6. FOOTER (WATERMARK DI TENGAH BAWAH) ---
-    // Request lu: @alexiazaphyra gantiin tulisan GENERATED BY ALEXIA
+    // --- 6. FOOTER WATERMARK ---
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'; // Bikin agak redup estetik
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = `italic 16px ${mainFont}`;
     ctx.fillText('powered by @alexiazaphyra', width / 2, height - 35);
 
