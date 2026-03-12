@@ -76,9 +76,8 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     const artistLines = wrapText(safeArtist, MAX_ARTIST_CHARS);
 
     // --- LOGIKA CENTER VERTIKAL DINAMIS ---
-    // Hitung total tinggi blok teks berdasarkan jumlah baris
-    const titleGap = 70; // Jarak dari Header (DAY #) ke Judul
-    const artistGap = 60; // Jarak dari Judul terakhir ke Artis
+    const titleGap = 70; 
+    const artistGap = 60; 
     const artistLineHeight = 50;
 
     const totalTextHeight = 
@@ -87,10 +86,8 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         artistGap + 
         ((artistLines.length - 1) * artistLineHeight);
 
-    // 315 adalah titik tengah kanvas (630 / 2)
     const startY = 315 - (totalTextHeight / 2);
 
-    // Susun SVG Judul
     let titleSvg = '';
     let currentY = startY + titleGap; 
     
@@ -103,7 +100,6 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         }
     });
 
-    // Susun SVG Artis
     let artistSvg = '';
     currentY += artistGap; 
 
@@ -116,16 +112,24 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     });
 
     // --- PROSES GAMBAR ---
+
+    // 1. Background Blur (Tetap blur halus)
     const background = await sharp(originalBuffer)
       .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'cover' })
       .blur(40)
       .modulate({ brightness: 0.6 })
       .toBuffer();
 
+    // 2. Foreground (Cover Album)
     const foreground = await sharp(originalBuffer)
-      .resize(COVER_SIZE, COVER_SIZE, { fit: 'cover' })
+      .resize(COVER_SIZE, COVER_SIZE, { 
+          fit: 'cover',
+          kernel: sharp.kernel.lanczos3 // Algoritma resize terbaik biar detail gak pecah
+      })
+      .sharpen({ sigma: 1.2 }) // Ngasih efek penajaman ekstra biar teks kecil kebaca
       .toBuffer();
 
+    // 3. SVG Overlay
     const textSvg = `
       <svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}">
         <style>
@@ -155,6 +159,7 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
       </svg>
     `;
 
+    // 4. Gabungkan Semua
     const finalImage = await sharp(background)
       .composite([
         { input: foreground, top: Math.floor((CARD_HEIGHT - COVER_SIZE) / 2), left: 50 },
