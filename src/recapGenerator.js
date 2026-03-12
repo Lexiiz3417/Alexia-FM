@@ -28,7 +28,6 @@ async function getCoverWinner(title, artist) {
             const sTitle = title.toLowerCase();
             return tTitle.includes(sTitle) || sTitle.includes(tTitle);
         });
-        // Modifikasi dikit URL YouTube biar dapet resolusi HD
         if (found) return found.thumbnails[found.thumbnails.length - 1].url.replace(/=w\d+-h\d+.*/, '=w1200-h1200-l100-rj');
 
         const searchData = await getOdesliData(`https://music.youtube.com/search?q=${encodeURIComponent(title + ' ' + artist)}`);
@@ -41,23 +40,23 @@ async function prepareImages(url) {
     if (!url) return null;
     try {
         const res = await fetch(url);
+        // FIX: Kalau servernya ngasih 404, langsung batalin, jangan diproses!
+        if (!res.ok) return null; 
+        
         const buffer = Buffer.from(await res.arrayBuffer());
 
-        // 1. Bikin gambar background jadi Blur & Gelap (Pakai Sharp)
         const bgBuffer = await sharp(buffer)
             .resize(800, 1000, { fit: 'cover' })
-            .blur(35) // Efek blur estetik
-            .modulate({ brightness: 0.45 }) // Digelapin dikit
-            .png() // Paksa jadi PNG biar Canvas nggak ngambek
+            .blur(40) 
+            .modulate({ brightness: 0.4 }) 
+            .png() 
             .toBuffer();
 
-        // 2. Bikin gambar cover kotak tajam (Pakai Sharp)
         const fgBuffer = await sharp(buffer)
             .resize(320, 320, { fit: 'cover' })
             .png()
             .toBuffer();
 
-        // Ubah jadi format yang bisa dibaca Canvas
         return {
             bgImg: await loadImage(bgBuffer),
             fgImg: await loadImage(fgBuffer)
@@ -80,22 +79,23 @@ export async function generateRecapImage(type, songs) {
     
     const topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
     let finalImages = null;
-    const defaultCoverUrl = 'https://i.ibb.co/3sX8HnM/alexia-default-cover.png'; // Placeholder kalau API mati
+    
+    // FIX: Pakai Placeholder anti-mati (Warna background gelap, teks Kuning Gold)
+    const defaultCoverUrl = 'https://placehold.co/400x400/1a1a1a/FFD700.png?text=ALEXIA+FM'; 
 
     // --- 1. PROSES GAMBAR DENGAN SHARP ---
     if (topSong.title !== "Unknown") {
         let coverUrl = await getCoverWinner(topSong.title, topSong.artist);
         
-        // Coba proses URL dari API
         if (coverUrl) finalImages = await prepareImages(coverUrl);
-        
-        // Kalau gagal/error, pake cover default
         if (!finalImages) finalImages = await prepareImages(defaultCoverUrl);
     }
 
-    // --- 2. RENDER BACKGROUND BLUR ---
+    // --- 2. RENDER BACKGROUND ---
     if (finalImages && finalImages.bgImg) {
         ctx.drawImage(finalImages.bgImg, 0, 0, width, height);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Extra layer gelap tipis
+        ctx.fillRect(0, 0, width, height);
     } else {
         const grad = ctx.createLinearGradient(0, 0, 0, height);
         grad.addColorStop(0, '#0f0f0f');
@@ -121,7 +121,7 @@ export async function generateRecapImage(type, songs) {
         const y = 160;
 
         if (finalImages && finalImages.fgImg) {
-            ctx.shadowBlur = 50; 
+            ctx.shadowBlur = 40; 
             ctx.shadowColor = 'rgba(255, 215, 0, 0.2)';
             ctx.drawImage(finalImages.fgImg, x, y, coverSize, coverSize);
             ctx.shadowBlur = 0;
