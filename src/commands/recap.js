@@ -5,7 +5,7 @@ import { getTopSongs } from '../history.js';
 import { generateRecapImage } from '../recapGenerator.js';
 import Keyv from 'keyv';
 
-// Inisialisasi database cooldown menggunakan Keyv (terpisah namespace)
+// Inisialisasi database cooldown
 const db = new Keyv('sqlite://data/db.sqlite', { namespace: 'cooldown_recap' });
 
 export default {
@@ -25,28 +25,32 @@ export default {
     async execute(interaction) {
         const userId = interaction.user.id;
         
-        // --- 1. COOLDOWN LOGIC (24 Hours) ---
-        const lastUsed = await db.get(userId);
-        const now = Date.now();
-        const cooldownAmount = 24 * 60 * 60 * 1000; // 24 hours in ms
+        // Ambil OWNER_ID dari Environment Variables (.env)
+        const OWNER_ID = process.env.OWNER_ID;
+        const isOwner = userId === OWNER_ID;
 
-        if (lastUsed) {
-            const expirationTime = lastUsed + cooldownAmount;
-            if (now < expirationTime) {
-                const timeLeft = (expirationTime - now) / (60 * 60 * 1000);
-                return interaction.reply({ 
-                    content: `⏳ **Slow down!** You've already generated a recap today. Please try again in **${timeLeft.toFixed(1)} hours**.`, 
-                    ephemeral: true 
-                });
+        // --- ⏳ COOLDOWN LOGIC (Bypassed for Owner) ---
+        if (!isOwner) {
+            const lastUsed = await db.get(userId);
+            const now = Date.now();
+            const cooldownAmount = 24 * 60 * 60 * 1000; // 24 hours
+
+            if (lastUsed) {
+                const expirationTime = lastUsed + cooldownAmount;
+                if (now < expirationTime) {
+                    const timeLeft = (expirationTime - now) / (60 * 60 * 1000);
+                    return interaction.reply({ 
+                        content: `⏳ **Slow down!** You've already generated a recap today. Please try again in **${timeLeft.toFixed(1)} hours**.`, 
+                        ephemeral: true 
+                    });
+                }
             }
         }
 
-        // Defer reply karena render canvas butuh waktu beberapa detik
+        // Defer reply karena rendering butuh waktu
         await interaction.deferReply();
 
         const period = interaction.options.getString('period');
-        
-        // Konfigurasi rentang hari dan limit lagu
         let days = 7;
         let limit = 5;
         let titleLabel = "WEEKLY";
@@ -62,34 +66,34 @@ export default {
         }
 
         try {
-            // --- 2. FETCH DATA FROM SQLITE ---
+            // 1. Ambil data history
             const songs = await getTopSongs(days, limit);
 
-            // Jika data history kosong (User belum pernah dengerin lagu)
             if (!songs || songs.length === 0) {
-                return interaction.editReply(`❌ No music history found for the **${titleLabel}** period. Start playing some tunes first!`);
+                return interaction.editReply(`❌ No music history found for the **${titleLabel}** period.`);
             }
 
-            // --- 3. GENERATE THE IMAGE ---
-            // Memanggil fungsi dari recapGenerator.js
+            // 2. Generate gambar recap
             const imageBuffer = await generateRecapImage(titleLabel, songs);
 
             if (!imageBuffer) {
-                return interaction.editReply("❌ Failed to generate the recap image. Please try again later.");
+                return interaction.editReply("❌ Failed to generate the recap image.");
             }
 
-            // Simpan waktu penggunaan terakhir setelah berhasil render
-            await db.set(userId, now);
+            // 3. Set cooldown (Hanya untuk user biasa)
+            if (!isOwner) {
+                await db.set(userId, Date.now());
+            }
 
-            // --- 4. SEND TO DISCORD ---
+            // 4. Kirim hasil
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'alexia-recap.png' });
             
             const embed = new EmbedBuilder()
-                .setColor('#FFD700') // Yellow Gold matching the design
+                .setColor('#FFD700')
                 .setTitle(`📊 Alexia ${titleLabel} Wrapped`)
-                .setDescription(`Here are the most played tracks in this server over the past ${days} days!`)
+                .setDescription(`Check out the top community tracks!`)
                 .setImage('attachment://alexia-recap.png')
-                .setFooter({ text: 'Limit: 1 recap per day • Powered by Alexia History' })
+                .setFooter({ text: isOwner ? 'Owner Mode: Unlimited Access' : 'Limit: 1 recap per day' })
                 .setTimestamp();
 
             await interaction.editReply({
@@ -99,7 +103,7 @@ export default {
 
         } catch (error) {
             console.error("❌ Recap Command Error:", error);
-            await interaction.editReply("❌ An error occurred while retrieving history data.");
+            await interaction.editReply("❌ An error occurred while retrieving data.");
         }
     }
 };
