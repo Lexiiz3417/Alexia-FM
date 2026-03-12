@@ -1,0 +1,79 @@
+📊 ALEXIA {label} WRAPPED IS HERE!
+
+The crown goes to {artist} with "{title}", racking up {plays} plays this {period}! 👑🔥
+
+Check out the full chart below. Did your favorite track make it to the list?
+
+{tags}
+---
+🎶 The {period} results are in!
+
+"{title}" by {artist} absolutely dominated the airwaves with {plays} plays! 🏆
+
+Swipe to see our community's top tracks. Keep the music playing! 🚀
+
+{tags}
+---
+🔥 What a {period} for music!
+
+Taking the #1 spot is "{title}" by {artist}. You guys couldn't get enough of this one! 🥇
+
+Here is the official Alexia {label} Recap. Let's see what next {period} brings!
+
+{tags}
+---
+We clearly have a favorite! 🎧 This {period}, everyone was absolutely obsessed with "{title}" by {artist}. 
+
+With a massive {plays} plays, it easily secured the #1 spot on our Alexia {label} chart. 📈🔥 
+
+Take a look at the rest of the leaderboard below!
+
+{tags}
+---
+Turn up the volume! 🎚️ The numbers are in for the Alexia {label} Recap, and the winner is crystal clear.
+
+"{title}" by {artist} takes the throne with {plays} streams this {period}! 👑
+
+Swipe through to see what else kept us moving. 🎶
+
+{tags}
+---
+🚨 NEW CHART ALERT! 🚨
+
+Your Alexia {label} Wrapped has arrived! Leading the pack is {artist} with the absolute banger, "{title}" ({plays} plays). 🏆🔥
+
+Check out the full Top Chart and let us know what you'll be playing next!
+
+{tags}
+---
+Vibe check passed! ✅ The music taste this {period} was top tier.
+
+"{title}" by {artist} was our ultimate anthem, hitting #1 with {plays} total plays! 🎶🥇
+
+Here’s the full Alexia {label} Breakdown. Keep the good tracks rolling!
+
+{tags}
+---
+That’s a wrap for this {period}! 🎬
+
+You listened, we tracked. The most played track goes to {artist} with "{title}", scoring an impressive {plays} plays! 🎧💥
+
+Peep the rest of the Alexia {label} chart below. Who are you rooting for next?
+
+{tags}
+---
+Your resident DJ Alexia dropping the official {label} Recap! 💽✨
+
+Nobody could stop {artist} this {period}. "{title}" completely took over our playlists with {plays} plays! 📈🔥
+
+Who made the rest of the list? Check it out!
+
+{tags}
+---
+Numbers don't lie! 📊
+
+Your ultimate track of the {period} is "{title}" by {artist}, racking up a solid {plays} plays to claim the #1 spot! 🏆💫
+
+Here’s your official Alexia {label} Recap. Time to find your next favorite song!
+
+{tags}
