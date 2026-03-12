@@ -3,27 +3,50 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getTopSongs } from '../history.js';
 import { generateRecapImage } from '../recapGenerator.js';
+import Keyv from 'keyv';
+
+// Inisialisasi database cooldown menggunakan Keyv (terpisah namespace)
+const db = new Keyv('sqlite://data/db.sqlite', { namespace: 'cooldown_recap' });
 
 export default {
     data: new SlashCommandBuilder()
         .setName('recap')
-        .setDescription('Generate Alexia Music Recap (Wrapped)')
+        .setDescription('Generate the music chart recap for this server')
         .addStringOption(option =>
             option.setName('period')
-                .setDescription('Pilih periode recap')
+                .setDescription('Select the recap period')
                 .setRequired(true)
                 .addChoices(
                     { name: '📅 Weekly (Top 5)', value: 'weekly' },
-                    { name: 'month Monthly (Top 7)', value: 'monthly' },
+                    { name: '🌙 Monthly (Top 7)', value: 'monthly' },
                     { name: '🏆 Yearly (Top 10)', value: 'yearly' }
                 )),
 
     async execute(interaction) {
+        const userId = interaction.user.id;
+        
+        // --- 1. COOLDOWN LOGIC (24 Hours) ---
+        const lastUsed = await db.get(userId);
+        const now = Date.now();
+        const cooldownAmount = 24 * 60 * 60 * 1000; // 24 hours in ms
+
+        if (lastUsed) {
+            const expirationTime = lastUsed + cooldownAmount;
+            if (now < expirationTime) {
+                const timeLeft = (expirationTime - now) / (60 * 60 * 1000);
+                return interaction.reply({ 
+                    content: `⏳ **Slow down!** You've already generated a recap today. Please try again in **${timeLeft.toFixed(1)} hours**.`, 
+                    ephemeral: true 
+                });
+            }
+        }
+
+        // Defer reply karena render canvas butuh waktu beberapa detik
         await interaction.deferReply();
 
         const period = interaction.options.getString('period');
         
-        // Konfigurasi Rentang & Limit
+        // Konfigurasi rentang hari dan limit lagu
         let days = 7;
         let limit = 5;
         let titleLabel = "WEEKLY";
@@ -39,30 +62,34 @@ export default {
         }
 
         try {
-            // 1. Ambil data dari SQLite
+            // --- 2. FETCH DATA FROM SQLITE ---
             const songs = await getTopSongs(days, limit);
 
+            // Jika data history kosong (User belum pernah dengerin lagu)
             if (!songs || songs.length === 0) {
-                return interaction.editReply(`❌ Belum ada data history untuk periode **${titleLabel}**. Yuk puter musik dulu!`);
+                return interaction.editReply(`❌ No music history found for the **${titleLabel}** period. Start playing some tunes first!`);
             }
 
-            // 2. Generate Gambar via RecapGenerator
-            // Pastikan generateRecapImage sudah lu save dengan logic Background Blur tadi
+            // --- 3. GENERATE THE IMAGE ---
+            // Memanggil fungsi dari recapGenerator.js
             const imageBuffer = await generateRecapImage(titleLabel, songs);
 
             if (!imageBuffer) {
-                return interaction.editReply("❌ Gagal membuat gambar recap.");
+                return interaction.editReply("❌ Failed to generate the recap image. Please try again later.");
             }
 
-            // 3. Kirim ke Discord
+            // Simpan waktu penggunaan terakhir setelah berhasil render
+            await db.set(userId, now);
+
+            // --- 4. SEND TO DISCORD ---
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'alexia-recap.png' });
             
             const embed = new EmbedBuilder()
-                .setColor('#b8256f')
+                .setColor('#FFD700') // Yellow Gold matching the design
                 .setTitle(`📊 Alexia ${titleLabel} Wrapped`)
-                .setDescription(`Ini adalah lagu-lagu yang paling sering diputar/dipost selama ${days} hari terakhir di server ini.`)
+                .setDescription(`Here are the most played tracks in this server over the past ${days} days!`)
                 .setImage('attachment://alexia-recap.png')
-                .setFooter({ text: 'Alexia Music System • Data driven by History Log' })
+                .setFooter({ text: 'Limit: 1 recap per day • Powered by Alexia History' })
                 .setTimestamp();
 
             await interaction.editReply({
@@ -72,7 +99,7 @@ export default {
 
         } catch (error) {
             console.error("❌ Recap Command Error:", error);
-            await interaction.editReply("❌ Terjadi kesalahan saat menarik data history.");
+            await interaction.editReply("❌ An error occurred while retrieving history data.");
         }
     }
 };

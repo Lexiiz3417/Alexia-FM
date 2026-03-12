@@ -5,9 +5,13 @@ nixPkgs = [
     "nodejs",
     "fontconfig",
     "jetbrains-mono",
-    "noto-fonts-cjk-sans",   # <--- UPDATED: Changed from noto-fonts-cjk
+    "noto-fonts",
     "noto-fonts-emoji"
 ]
+
+[phases.build]
+# Memaksa sistem Linux Railway untuk men-scan font yang baru di-install
+cmds = ["npm install", "fc-cache -f"]
 
 [start]
 cmd = "node src/index.js"
