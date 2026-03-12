@@ -18,9 +18,12 @@ try {
     console.error("❌ Gagal load font lokal:", e.message);
 }
 
-// Helper 1: Cari Cover Juara 1
+// --- HELPER 1: CARI COVER JUARA 1 (3 LAPIS PELINDUNG) ---
 async function getCoverWinner(title, artist) {
     if (!title || !artist) return null;
+    const query = encodeURIComponent(`${title} ${artist}`);
+
+    // LAPIS 1: Coba cari di YouTube Music / Playlist lu
     try {
         const playlist = await getPlaylistTracks();
         const found = playlist.find(t => {
@@ -28,20 +31,46 @@ async function getCoverWinner(title, artist) {
             const sTitle = title.toLowerCase();
             return tTitle.includes(sTitle) || sTitle.includes(tTitle);
         });
-        if (found) return found.thumbnails[found.thumbnails.length - 1].url.replace(/=w\d+-h\d+.*/, '=w1200-h1200-l100-rj');
+        if (found && found.thumbnails && found.thumbnails.length > 0) {
+            return found.thumbnails[found.thumbnails.length - 1].url.replace(/=w\d+-h\d+.*/, '=w1200-h1200-l100-rj');
+        }
+    } catch (e) {
+        console.log("⚠️ YT Playlist error, mencoba lapis 2...");
+    }
 
-        const searchData = await getOdesliData(`https://music.youtube.com/search?q=${encodeURIComponent(title + ' ' + artist)}`);
-        return searchData?.imageUrl || null;
-    } catch (e) { return null; }
+    // LAPIS 2: Coba cari pakai Odesli API
+    try {
+        const searchData = await getOdesliData(`https://music.youtube.com/search?q=${query}`);
+        if (searchData && searchData.imageUrl) {
+            return searchData.imageUrl;
+        }
+    } catch (e) {
+        console.log("⚠️ Odesli error, mencoba lapis 3...");
+    }
+
+    // LAPIS 3: Fallback Paling Gacor -> iTunes / Apple Music API (Anti-mati)
+    try {
+        const itunesUrl = `https://itunes.apple.com/search?term=${query}&entity=song&limit=1`;
+        const res = await fetch(itunesUrl);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+            // Apple ngasih ukuran 100x100, kita retas linknya biar ngasih resolusi HD 600x600
+            return data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
+        }
+    } catch (e) {
+        console.log("⚠️ iTunes API error.");
+    }
+
+    // Kalau 3 lapis jebol semua, baru return null (buat trigger placeholder ALEXIA FM)
+    return null; 
 }
 
-// Helper 2: Sharp Converter (Ubah WebP ke PNG & Bikin Efek Blur)
+// --- HELPER 2: SHARP CONVERTER (Ubah WebP ke PNG & Bikin Efek Blur) ---
 async function prepareImages(url) {
     if (!url) return null;
     try {
         const res = await fetch(url);
-        // FIX: Kalau servernya ngasih 404, langsung batalin, jangan diproses!
-        if (!res.ok) return null; 
+        if (!res.ok) return null; // Cegah error kalau server ngasih 404/Forbidden
         
         const buffer = Buffer.from(await res.arrayBuffer());
 
@@ -67,7 +96,7 @@ async function prepareImages(url) {
     }
 }
 
-// MESIN UTAMA: CANVAS
+// --- MESIN UTAMA: CANVAS ---
 export async function generateRecapImage(type, songs) {
     const width = 800;
     const height = 1000;
@@ -80,21 +109,22 @@ export async function generateRecapImage(type, songs) {
     const topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
     let finalImages = null;
     
-    // FIX: Pakai Placeholder anti-mati (Warna background gelap, teks Kuning Gold)
-    const defaultCoverUrl = 'https://placehold.co/400x400/1a1a1a/FFD700.png?text=ALEXIA+FM'; 
+    // Placeholder anti-mati (Background gelap, teks Kuning Gold)
+    const defaultCoverUrl = 'https://placehold.co/600x600/1a1a1a/FFD700.png?text=ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧'; 
 
     // --- 1. PROSES GAMBAR DENGAN SHARP ---
     if (topSong.title !== "Unknown") {
         let coverUrl = await getCoverWinner(topSong.title, topSong.artist);
         
         if (coverUrl) finalImages = await prepareImages(coverUrl);
+        // Kalau cover asli gagal diproses Sharp, pake placeholder
         if (!finalImages) finalImages = await prepareImages(defaultCoverUrl);
     }
 
     // --- 2. RENDER BACKGROUND ---
     if (finalImages && finalImages.bgImg) {
         ctx.drawImage(finalImages.bgImg, 0, 0, width, height);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Extra layer gelap tipis
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Extra layer gelap tipis biar teks kebaca
         ctx.fillRect(0, 0, width, height);
     } else {
         const grad = ctx.createLinearGradient(0, 0, 0, height);
