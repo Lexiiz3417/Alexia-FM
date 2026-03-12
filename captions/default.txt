@@ -35,3 +35,54 @@ Just vibe with this one... 🌊
 🔗 Listen now: {link}
 
 {tags}
+---
+Day #{day} of serving you good music! 📻
+Don't sleep on this track from {artist}. 
+
+Hit play on "{title}" right here:
+🔗 {link}
+
+{tags}
+---
+Need a mood boost? I've got you covered. ✨
+Turn the volume up for "{title}" by {artist}.
+
+🔗 Tune in: {link}
+
+{tags}
+---
+Handpicked for your daily rotation 💿
+You are listening to "{title}" by the one and only {artist}.
+
+🔗 Stream it now: {link}
+
+{tags}
+---
+Alexia FM is live! 🎙️
+Up next on our daily radar is a solid track from {artist}. 
+
+🎵 "{title}"
+🔗 {link}
+
+{tags}
+---
+Straight fire today. 🔥
+If you haven't heard "{title}" by {artist} yet, you're missing out!
+
+🔗 Check it out: {link}
+
+{tags}
+---
+Perfect background noise or main event? You decide. 🎧
+Now spinning: {artist} - "{title}".
+
+🔗 Listen here: {link}
+
+{tags}
+---
+Looking for something new to listen to? 👀
+Day #{day} brings us this absolute gem: "{title}" by {artist}.
+
+🔗 Dive in: {link}
+
+{tags}
