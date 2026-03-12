@@ -2,7 +2,8 @@
 
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getTopSongs } from '../history.js';
-import { generateRecapImage } from '../recapGenerator.js';
+// Import DUA fungsi generator sekaligus untuk A/B Testing
+import { generateRecapCanvas, generateRecapSharp } from '../recapGenerator.js';
 import Keyv from 'keyv';
 
 // Inisialisasi database cooldown
@@ -47,7 +48,7 @@ export default {
             }
         }
 
-        // Defer reply karena rendering butuh waktu
+        // Defer reply karena rendering 2 gambar butuh waktu ekstra
         await interaction.deferReply();
 
         const period = interaction.options.getString('period');
@@ -73,11 +74,12 @@ export default {
                 return interaction.editReply(`❌ No music history found for the **${titleLabel}** period.`);
             }
 
-            // 2. Generate gambar recap
-            const imageBuffer = await generateRecapImage(titleLabel, songs);
+            // 2. Generate gambar recap pake 2 mesin (A/B Test)
+            const canvasBuffer = await generateRecapCanvas(titleLabel, songs);
+            const sharpBuffer = await generateRecapSharp(titleLabel, songs);
 
-            if (!imageBuffer) {
-                return interaction.editReply("❌ Failed to generate the recap image.");
+            if (!canvasBuffer || !sharpBuffer) {
+                return interaction.editReply("❌ Failed to generate the recap images.");
             }
 
             // 3. Set cooldown (Hanya untuk user biasa)
@@ -85,25 +87,26 @@ export default {
                 await db.set(userId, Date.now());
             }
 
-            // 4. Kirim hasil
-            const attachment = new AttachmentBuilder(imageBuffer, { name: 'alexia-recap.png' });
+            // 4. Siapkan dua attachment
+            const attachCanvas = new AttachmentBuilder(canvasBuffer, { name: 'recap-canvas.png' });
+            const attachSharp = new AttachmentBuilder(sharpBuffer, { name: 'recap-sharp.png' });
             
             const embed = new EmbedBuilder()
                 .setColor('#FFD700')
-                .setTitle(`📊 Alexia ${titleLabel} Wrapped`)
-                .setDescription(`Check out the top community tracks!`)
-                .setImage('attachment://alexia-recap.png')
+                .setTitle(`📊 Alexia ${titleLabel} Wrapped - A/B TEST`)
+                .setDescription(`Coba lu bandingin Lex, bagusan yang atas (Canvas) atau yang bawah (Sharp)?`)
                 .setFooter({ text: isOwner ? 'Owner Mode: Unlimited Access' : 'Limit: 1 recap per day' })
                 .setTimestamp();
 
+            // Kirim Embed dan 2 gambar sekaligus
             await interaction.editReply({
                 embeds: [embed],
-                files: [attachment]
+                files: [attachCanvas, attachSharp] 
             });
 
         } catch (error) {
             console.error("❌ Recap Command Error:", error);
-            await interaction.editReply("❌ An error occurred while retrieving data.");
+            await interaction.editReply("❌ An error occurred while retrieving data or rendering images.");
         }
     }
 };
