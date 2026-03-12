@@ -25,6 +25,7 @@ function wrapText(text, maxChars) {
 
 /**
  * Membuat Kartu Musik Estetik (Sharp + SVG Overlay)
+ * Fitur: HD Cover, Blur Mulus, Dynamic Centering, Auto Font Resizing.
  */
 export async function createMusicCard({ imageUrl, title, artist, topText }) {
   try {
@@ -51,27 +52,31 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     let rawTitle = title ? title : 'Unknown';
     let rawArtist = artist ? artist : 'Unknown';
 
+    // Potong kalau kepanjangan banget biar gak ngerusak layout
     if (rawTitle.length > 40) {
         rawTitle = rawTitle.substring(0, 37) + '...';
     }
 
+    // Sanitize karakter khusus biar SVG gak error
     const sanitize = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeTitle = sanitize(rawTitle);
     const safeArtist = sanitize(rawArtist);
 
     const hasKanji = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(rawTitle);
 
+    // Setup Default Font (Lagu Latin Pendek)
     let titleFontSize = 65;
     let titleLineHeight = 80;
     let maxTitleChars = 15;
 
+    // Kalau panjang atau ada Kanji, font ciutkan biar rapi
     if (rawTitle.length > 12 || hasKanji) {
         titleFontSize = 50;       
         titleLineHeight = 60;     
         maxTitleChars = 22;       
     }
 
-    // --- PROSES WRAPPING ---
+    // --- PROSES WRAPPING TEKS ---
     const titleLines = wrapText(safeTitle, maxTitleChars);
     const artistLines = wrapText(safeArtist, MAX_ARTIST_CHARS);
 
@@ -86,6 +91,7 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         artistGap + 
         ((artistLines.length - 1) * artistLineHeight);
 
+    // 315 adalah titik tengah kanvas vertikal (630 / 2)
     const startY = 315 - (totalTextHeight / 2);
 
     let titleSvg = '';
@@ -111,22 +117,23 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         }
     });
 
-    // --- PROSES GAMBAR ---
+    // --- PROSES GAMBAR (UPGRADE HD) ---
 
-    // 1. Background Blur (Tetap blur halus)
+    // 1. Background (Tetap blur mulus)
     const background = await sharp(originalBuffer)
       .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'cover' })
       .blur(40)
       .modulate({ brightness: 0.6 })
       .toBuffer();
 
-    // 2. Foreground (Cover Album)
+    // 2. Foreground / Cover Art (KUALITAS HD MAKSIMAL)
     const foreground = await sharp(originalBuffer)
       .resize(COVER_SIZE, COVER_SIZE, { 
           fit: 'cover',
-          kernel: sharp.kernel.lanczos3 // Algoritma resize terbaik biar detail gak pecah
+          kernel: sharp.kernel.lanczos3, // Algoritma resize paling tajam
+          fastShrinkOnLoad: false // Paksa mesin teliti merender detail kecil
       })
-      .sharpen({ sigma: 1.2 }) // Ngasih efek penajaman ekstra biar teks kecil kebaca
+      .sharpen({ sigma: 1.2 }) // Pertajam garis/teks kecil
       .toBuffer();
 
     // 3. SVG Overlay
@@ -159,13 +166,17 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
       </svg>
     `;
 
-    // 4. Gabungkan Semua
+    // 4. Gabungkan & Export (Tanpa Kompresi)
     const finalImage = await sharp(background)
       .composite([
         { input: foreground, top: Math.floor((CARD_HEIGHT - COVER_SIZE) / 2), left: 50 },
         { input: Buffer.from(textSvg), top: 0, left: 0 }
       ])
-      .png()
+      .png({ 
+          compressionLevel: 0, // 0 = Tanpa kompresi (Ukuran file lebih besar, tapi kualitas 100% terjaga)
+          force: true, 
+          palette: false 
+      })
       .toBuffer();
 
     return finalImage;
@@ -176,6 +187,7 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
   }
 }
 
+// Fungsi crop lama untuk fallback (Tidak diubah)
 export async function cropToSquare(imageUrl) {
     try {
         const response = await fetch(imageUrl);
