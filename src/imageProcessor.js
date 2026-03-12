@@ -48,29 +48,23 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
          }
     }
 
-    // --- LOGIKA JUDUL PINTAR ---
     let rawTitle = title ? title : 'Unknown';
     let rawArtist = artist ? artist : 'Unknown';
 
-    // 1. Potong judul mentah dulu kalau kepanjangan (> 40 char)
     if (rawTitle.length > 40) {
         rawTitle = rawTitle.substring(0, 37) + '...';
     }
 
-    // 2. Baru di-sanitize untuk keamanan SVG
     const sanitize = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeTitle = sanitize(rawTitle);
     const safeArtist = sanitize(rawArtist);
 
-    // 3. Deteksi Kanji/Jepang pada judul
     const hasKanji = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(rawTitle);
 
-    // Setup Default (Teks Latin Pendek)
     let titleFontSize = 65;
     let titleLineHeight = 80;
     let maxTitleChars = 15;
 
-    // Opsi Dinamis: Kalau ada Kanji atau judul panjang, font menciut
     if (rawTitle.length > 12 || hasKanji) {
         titleFontSize = 50;       
         titleLineHeight = 60;     
@@ -79,8 +73,26 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
 
     // --- PROSES WRAPPING ---
     const titleLines = wrapText(safeTitle, maxTitleChars);
+    const artistLines = wrapText(safeArtist, MAX_ARTIST_CHARS);
+
+    // --- LOGIKA CENTER VERTIKAL DINAMIS ---
+    // Hitung total tinggi blok teks berdasarkan jumlah baris
+    const titleGap = 70; // Jarak dari Header (DAY #) ke Judul
+    const artistGap = 60; // Jarak dari Judul terakhir ke Artis
+    const artistLineHeight = 50;
+
+    const totalTextHeight = 
+        titleGap + 
+        ((titleLines.length - 1) * titleLineHeight) + 
+        artistGap + 
+        ((artistLines.length - 1) * artistLineHeight);
+
+    // 315 adalah titik tengah kanvas (630 / 2)
+    const startY = 315 - (totalTextHeight / 2);
+
+    // Susun SVG Judul
     let titleSvg = '';
-    let currentY = 250; 
+    let currentY = startY + titleGap; 
     
     titleLines.forEach((line, index) => {
         if (index === 0) {
@@ -91,15 +103,15 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         }
     });
 
-    let artistY = currentY + 60; 
-    const artistLines = wrapText(safeArtist, MAX_ARTIST_CHARS);
+    // Susun SVG Artis
     let artistSvg = '';
+    currentY += artistGap; 
 
     artistLines.forEach((line, index) => {
         if (index === 0) {
-            artistSvg += `<tspan x="550" y="${artistY}">${line}</tspan>`;
+            artistSvg += `<tspan x="550" y="${currentY}">${line}</tspan>`;
         } else {
-            artistSvg += `<tspan x="550" dy="50">${line}</tspan>`;
+            artistSvg += `<tspan x="550" dy="${artistLineHeight}">${line}</tspan>`;
         }
     });
 
@@ -114,7 +126,6 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
       .resize(COVER_SIZE, COVER_SIZE, { fit: 'cover' })
       .toBuffer();
 
-    // SVG OVERLAY (GAK ADA KOMEN ANEH-ANEH LAGI)
     const textSvg = `
       <svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}">
         <style>
@@ -137,7 +148,7 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
           }
         </style>
         
-        <text x="550" y="180" class="font-style top-text">${headerText}</text>
+        <text x="550" y="${startY}" class="font-style top-text">${headerText}</text>
         <text class="font-style title">${titleSvg}</text>
         <text class="font-style artist">${artistSvg}</text>
         <text x="1150" y="605" class="font-style watermark">${WATERMARK_TEXT}</text>
