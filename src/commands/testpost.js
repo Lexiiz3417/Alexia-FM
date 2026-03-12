@@ -21,7 +21,7 @@ async function getRandomTrack() {
 export default {
   data: new SlashCommandBuilder()
     .setName('testpost')
-    .setDescription('🔒 OWNER ONLY: Simulate daily autopost.')
+    .setDescription('OWNER ONLY: Simulate daily autopost.')
     .addStringOption(option =>
         option.setName('target')
             .setDescription('Choose platform')

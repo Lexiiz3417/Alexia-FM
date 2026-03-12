@@ -10,7 +10,7 @@ import { postToTelegram } from '../telegram.js';
 
 const data = new SlashCommandBuilder()
     .setName('manualpost')
-    .setDescription('Post manual untuk menambal Day # yang bolong (OWNER ONLY)')
+    .setDescription('OWNER ONLY: Post manual untuk menambal Day # yang bolong')
     .addStringOption(option =>
         option.setName('url')
             .setDescription('Link lagu (YouTube/Spotify/Apple Music)')
@@ -109,7 +109,7 @@ async function execute(interaction) {
         if (target === 'all' || target === 'discord') {
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
             const embed = new EmbedBuilder()
-                .setColor('#b8256f') 
+                .setColor('Random') 
                 .setDescription(caption)
                 .setImage('attachment://music-card.png');
 
