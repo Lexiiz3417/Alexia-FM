@@ -39,15 +39,12 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     const CARD_HEIGHT = 630;
     const COVER_SIZE = 450;
     
-    // --- KONFIGURASI LAYOUT ---
-    // REVISI FINAL:
-    const MAX_TITLE_CHARS = 15;  
     const MAX_ARTIST_CHARS = 25; 
     const WATERMARK_TEXT = "@alexiazaphyra";
     
     // Sanitize text untuk SVG
     const sanitize = (str) => str ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'Unknown';
-    const safeTitle = sanitize(title);
+    let safeTitle = sanitize(title);
     const safeArtist = sanitize(artist);
 
     // Logic Top Text
@@ -62,8 +59,29 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
 
     // --- PROSES WRAPPING TEKS (JUDUL & ARTIS) ---
 
-    // 1. Wrap Judul
-    const titleLines = wrapText(safeTitle, MAX_TITLE_CHARS);
+    // 1. LOGIKA JUDUL PINTAR
+    // Deteksi apakah ada huruf CJK (Kanji/Kana/Hanzi)
+    const hasKanji = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/.test(safeTitle);
+
+    // Setingan default untuk teks Latin normal
+    let titleFontSize = 65;
+    let titleLineHeight = 80;
+    let maxTitleChars = 15;
+
+    // Jika judul panjang ATAU mengandung huruf Kanji, ciutkan font
+    if (safeTitle.length > 12 || hasKanji) {
+        titleFontSize = 50;       // Font lebih kecil
+        titleLineHeight = 60;     // Jarak antar baris dirapatkan
+        maxTitleChars = 22;       // Limit huruf per baris diperlebar
+    }
+
+    // Fallback terakhir: Kalau saking panjangnya (lebih dari 40 char), potong pakai "..."
+    if (safeTitle.length > 40) {
+        safeTitle = safeTitle.substring(0, 37) + '...';
+    }
+
+    // Wrap Judul
+    const titleLines = wrapText(safeTitle, maxTitleChars);
     let titleSvg = '';
     let currentY = 250; // Posisi Y awal judul
     
@@ -71,12 +89,12 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         if (index === 0) {
             titleSvg += `<tspan x="550" y="${currentY}">${line}</tspan>`;
         } else {
-            titleSvg += `<tspan x="550" dy="80">${line}</tspan>`; // Jarak antar baris judul
-            currentY += 80;
+            titleSvg += `<tspan x="550" dy="${titleLineHeight}">${line}</tspan>`; // Gunakan jarak baris dinamis
+            currentY += titleLineHeight;
         }
     });
 
-    // 2. Wrap Artis (INI PERBAIKAN UTAMANYA)
+    // 2. Wrap Artis
     let artistY = currentY + 60; // Jarak awal Artis dari Judul terakhir
     const artistLines = wrapText(safeArtist, MAX_ARTIST_CHARS);
     let artistSvg = '';
@@ -88,7 +106,6 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
         } else {
             // Baris kedua dst. (dy lebih kecil karena font lebih kecil)
             artistSvg += `<tspan x="550" dy="50">${line}</tspan>`;
-            // Kita tidak perlu update artistY lagi karena dy sudah menanganinya relatif
         }
     });
 
@@ -120,7 +137,9 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
             fill: #f1c40f; font-size: 28px; font-weight: bold; letter-spacing: 4px; 
           }
           .title { 
-            fill: #ffffff; font-size: 65px; font-weight: 800; 
+            fill: #ffffff; 
+            font-size: ${titleFontSize}px; /* <-- UKURAN FONT SEKARANG DINAMIS */
+            font-weight: 800; 
           }
           .artist { 
             fill: #cccccc; font-size: 40px; font-weight: 600; 
