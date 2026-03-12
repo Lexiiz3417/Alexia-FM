@@ -10,8 +10,12 @@ nixPkgs = [
 ]
 
 [phases.build]
-# Memaksa sistem Linux Railway untuk men-scan font yang baru di-install
-cmds = ["npm install", "fc-cache -f"]
+# Tambahkan variabel environment buat fontconfig biar gak error
+cmds = [
+    "npm install", 
+    "fc-cache -fv",
+    "export FONTCONFIG_PATH=/etc/fonts" 
+]
 
 [start]
 cmd = "node src/index.js"
