@@ -12,7 +12,6 @@ const __dirname = path.dirname(__filename);
 try {
     const fontPath = path.join(__dirname, '../fonts/JetBrainsMono-Bold.ttf');
     registerFont(fontPath, { family: 'JetBrains Mono' });
-    console.log("✅ Font Lokal Berhasil Di-load!");
 } catch (e) {
     console.error("❌ Gagal load font lokal:", e.message);
 }
@@ -41,57 +40,60 @@ export async function generateRecapImage(type, songs) {
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Panggil nama font yang udah di-register tadi
     const mainFont = '"JetBrains Mono"'; 
     const accentColor = '#FFD700';
     
     const topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
     let winnerCoverImg = null;
 
+    // --- 1. CARI COVER ATAU PAKAI PLACEHOLDER ---
+    // Kalau gagal cari dari API, kita pake logo default ini biar estetik
+    const defaultCoverUrl = 'https://i.ibb.co/3sX8HnM/alexia-default-cover.png'; // Bisa lu ganti URL logo bot lu
+
     if (topSong.title !== "Unknown") {
-        const coverUrl = await getCoverWinner(topSong.title, topSong.artist);
-        if (coverUrl) {
-            try { winnerCoverImg = await loadImage(coverUrl); } catch (e) {}
+        let coverUrl = await getCoverWinner(topSong.title, topSong.artist);
+        if (!coverUrl) coverUrl = defaultCoverUrl; // Fallback kalau API gagal
+
+        try { 
+            winnerCoverImg = await loadImage(coverUrl); 
+        } catch (e) {
+            // Kalau gagal nge-load gambar dari URL (biasanya karena forbidden/error jaringan)
+            try { winnerCoverImg = await loadImage(defaultCoverUrl); } catch(err){}
         }
     }
 
-    // Background
+    // --- 2. GAMBAR BACKGROUND ---
     if (winnerCoverImg) {
         ctx.drawImage(winnerCoverImg, 0, 0, width, height);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; // Overlay digelapin dikit biar teks makin jelas
         ctx.fillRect(0, 0, width, height);
     } else {
         const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, '#121212');
+        grad.addColorStop(0, '#0f0f0f');
         grad.addColorStop(1, '#1a1a1a');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, width, height);
     }
 
-    // Watermark
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; 
-    ctx.font = `italic 16px ${mainFont}`;
-    ctx.fillText('@alexiazaphyra', width - 40, 45);
-
-    // Header
+    // --- 3. HEADER ---
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 32px ${mainFont}`;
-    ctx.fillText(`ALEXIA ${type} RECAP`, width / 2, 90);
+    ctx.fillText(`ALEXIA ${type} RECAP`, width / 2, 80);
     
     ctx.fillStyle = accentColor;
     ctx.font = `20px ${mainFont}`;
-    ctx.fillText(new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }), width / 2, 125);
+    ctx.fillText(new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }), width / 2, 115);
 
-    // Top 1
+    // --- 4. TOP 1 SECTION ---
     if (topSong.title !== "Unknown") {
         const coverSize = 320;
         const x = (width - coverSize) / 2;
-        const y = 190;
+        const y = 160; // Naikkin dikit covernya
 
         if (winnerCoverImg) {
-            ctx.shadowBlur = 50; ctx.shadowColor = 'rgba(255, 215, 0, 0.2)';
+            ctx.shadowBlur = 50; 
+            ctx.shadowColor = 'rgba(255, 215, 0, 0.2)';
             ctx.drawImage(winnerCoverImg, x, y, coverSize, coverSize);
             ctx.shadowBlur = 0;
         } else {
@@ -100,19 +102,20 @@ export async function generateRecapImage(type, songs) {
 
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 38px ${mainFont}`;
-        ctx.fillText(topSong.title, width / 2, 565);
+        ctx.fillText(topSong.title, width / 2, 535);
         
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
         ctx.font = `24px ${mainFont}`;
-        ctx.fillText(topSong.artist, width / 2, 605);
+        ctx.fillText(topSong.artist, width / 2, 575);
         
+        // FIX: Hapus emoji 🔥 ganti pakai teks murni "TOP 1 • X PLAYS" biar gak Tofu
         ctx.fillStyle = accentColor;
         ctx.font = `bold 22px ${mainFont}`;
-        ctx.fillText(`🔥 ${topSong.play_count} PLAYS THIS ${type}`, width / 2, 645);
+        ctx.fillText(`TOP 1 • ${topSong.play_count} PLAYS THIS ${type}`, width / 2, 615);
     }
 
-    // List Sisanya
-    const listStartTop = 715;
+    // --- 5. LIST RANKING ---
+    const listStartTop = 680; // Naikkin dikit listnya
     songs.slice(1).forEach((song, index) => {
         const rank = index + 2;
         const y = listStartTop + (index * 62);
@@ -138,10 +141,12 @@ export async function generateRecapImage(type, songs) {
         ctx.fillText(`${song.play_count || 0} PTS`, width - 110, y - 6);
     });
 
+    // --- 6. FOOTER (WATERMARK DI TENGAH BAWAH) ---
+    // Request lu: @alexiazaphyra gantiin tulisan GENERATED BY ALEXIA
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.font = `12px ${mainFont}`;
-    ctx.fillText('GENERATED BY ALEXIA', width / 2, height - 35);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'; // Bikin agak redup estetik
+    ctx.font = `italic 16px ${mainFont}`;
+    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 35);
 
     return canvas.toBuffer();
 }
