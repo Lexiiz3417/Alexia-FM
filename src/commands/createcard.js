@@ -4,133 +4,135 @@ import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js
 import { getOdesliData } from '../songlink.js';
 import { createMusicCard } from '../imageProcessor.js';
 import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; 
+import { logPlayHistory } from '../history.js'; // CCTV Alexia Wrapped
 
 // KONFIGURASI LIMIT
 const DAILY_LIMIT = 3; 
 
 export default {
-  data: new SlashCommandBuilder()
-    .setName('createcard')
-    .setDescription('Create a aesthetic music card from a link or custom image.')
-    .addStringOption(option => 
-        option.setName('song_url')
-            .setDescription('Link to the song (Spotify, SoundCloud, etc)')
-            .setRequired(false))
-    .addAttachmentOption(option => 
-        option.setName('image')
-            .setDescription('Upload your own cover image (Optional)')
-            .setRequired(false))
-    .addStringOption(option => 
-        option.setName('title')
-            .setDescription('Override/Set Song Title manually')
-            .setRequired(false))
-    .addStringOption(option => 
-        option.setName('artist')
-            .setDescription('Override/Set Artist Name manually')
-            .setRequired(false))
-    .addStringOption(option => 
-        option.setName('tag')
-            .setDescription('Top text (Default: SHARED MUSIC)', )
-            .setRequired(false)),
+    data: new SlashCommandBuilder()
+        .setName('createcard')
+        .setDescription('Create an aesthetic music card from a link or custom image.')
+        .addStringOption(option => 
+            option.setName('song_url')
+                .setDescription('Link to the song (Spotify, SoundCloud, etc)')
+                .setRequired(false))
+        .addAttachmentOption(option => 
+            option.setName('image')
+                .setDescription('Upload your own cover image (Optional)')
+                .setRequired(false))
+        .addStringOption(option => 
+            option.setName('title')
+                .setDescription('Override/Set Song Title manually')
+                .setRequired(false))
+        .addStringOption(option => 
+            option.setName('artist')
+                .setDescription('Override/Set Artist Name manually')
+                .setRequired(false))
+        .addStringOption(option => 
+            option.setName('tag')
+                .setDescription('Top text (Default: SHARED MUSIC)')
+                .setRequired(false)),
 
-  async execute(interaction) {
-    // 1. CEK LIMIT DULU (Panggil Satpam)
-    // Pastikan file src/utils/limiter.js sudah dibuat ya!
-    const limitStatus = await checkUserLimit(interaction.user.id, 'createcard', DAILY_LIMIT);
-    
-    // Jika ditolak satpam (kuota habis & bukan owner), stop di sini.
-    if (!limitStatus.allowed) {
-        return interaction.reply({ content: limitStatus.message, ephemeral: true });
-    }
-
-    // Defer reply karena proses generate gambar butuh waktu > 3 detik
-    await interaction.deferReply();
-
-    try {
-        // 2. Ambil Input User
-        const songUrl = interaction.options.getString('song_url');
-        const customImage = interaction.options.getAttachment('image');
-        const customTitle = interaction.options.getString('title');
-        const customArtist = interaction.options.getString('artist');
-        const customTag = interaction.options.getString('tag') || "SHARED MUSIC";
-
-        let finalTitle = "Unknown Title";
-        let finalArtist = "Unknown Artist";
-        let finalImageUrl = null;
-
-        // Validasi Awal: Harus ada minimal satu sumber data (Link atau Gambar Manual)
-        if (!songUrl && (!customImage || !customTitle)) {
-            return interaction.editReply({ content: '❌ **Error:** Please provide either a **Song Link** OR upload an **Image + Title**.' });
+    async execute(interaction) {
+        // 1. CEK LIMIT DULU
+        const limitStatus = await checkUserLimit(interaction.user.id, 'createcard', DAILY_LIMIT);
+        
+        if (!limitStatus.allowed) {
+            return interaction.reply({ 
+                content: limitStatus.message, 
+                flags: ['Ephemeral'] 
+            });
         }
 
-        // 3. Logika Pengambilan Data
-        // Skenario A: User kasih Link Lagu
-        if (songUrl) {
-            const odesliData = await getOdesliData(songUrl);
-            if (odesliData) {
-                finalTitle = odesliData.title;
-                finalArtist = odesliData.artist;
-                finalImageUrl = odesliData.imageUrl;
-            } else if (!customTitle) {
-                // Link rusak/tidak support, dan user tidak kasih judul manual
-                return interaction.editReply({ content: "❌ Couldn't fetch data from that link. Try entering Title & Image manually." });
+        // Defer reply karena proses generate gambar butuh waktu
+        await interaction.deferReply();
+
+        try {
+            // 2. Ambil Input User
+            const songUrl = interaction.options.getString('song_url');
+            const customImage = interaction.options.getAttachment('image');
+            const customTitle = interaction.options.getString('title');
+            const customArtist = interaction.options.getString('artist');
+            const customTag = interaction.options.getString('tag') || "SHARED MUSIC";
+
+            let finalTitle = "Unknown Title";
+            let finalArtist = "Unknown Artist";
+            let finalImageUrl = null;
+
+            // Validasi Awal
+            if (!songUrl && (!customImage || !customTitle)) {
+                return interaction.editReply({ content: '❌ **Error:** Please provide either a **Song Link** OR upload an **Image + Title**.' });
+            }
+
+            // 3. Logika Pengambilan Data
+            if (songUrl) {
+                const odesliData = await getOdesliData(songUrl);
+                if (odesliData) {
+                    finalTitle = odesliData.title;
+                    finalArtist = odesliData.artist;
+                    finalImageUrl = odesliData.imageUrl;
+                } else if (!customTitle) {
+                    return interaction.editReply({ content: "❌ Couldn't fetch data from that link. Try entering Title & Image manually." });
+                }
+            }
+
+            // Skenario B: User kasih Input Manual (Timpa data otomatis)
+            if (customTitle) finalTitle = customTitle;
+            if (customArtist) finalArtist = customArtist;
+            if (customImage) finalImageUrl = customImage.url;
+
+            if (!finalImageUrl) {
+                return interaction.editReply({ content: "❌ No image source found." });
+            }
+
+            // 4. Generate Kartu (Panggil ImageProcessor)
+            const imageBuffer = await createMusicCard({
+                imageUrl: finalImageUrl,
+                title: finalTitle,
+                artist: finalArtist,
+                topText: customTag
+            });
+
+            if (!imageBuffer) {
+                return interaction.editReply({ content: '❌ Failed to generate image canvas.' });
+            }
+
+            // --- 5. PASANG CCTV (HISTORY LOG) ---
+            logPlayHistory(finalTitle, finalArtist, interaction.user.id, 'createcard');
+
+            // 6. SUKSES? POTONG KUOTA
+            await incrementUserLimit(interaction.user.id, 'createcard');
+
+            // 7. Kirim Hasil ke Discord
+            const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
+            
+            let footerText = `Generated by ${interaction.user.username}`;
+            if (interaction.user.id === process.env.OWNER_ID) {
+                footerText += ` • 👑 Owner Access`;
+            } else {
+                const used = (limitStatus.usageCount || 0) + 1;
+                const left = Math.max(0, DAILY_LIMIT - used);
+                footerText += ` • Daily Quota: ${left}/${DAILY_LIMIT} left`;
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor('Random')
+                .setImage('attachment://music-card.png')
+                .setFooter({ text: footerText });
+
+            await interaction.editReply({ 
+                embeds: [embed],
+                files: [attachment] 
+            });
+
+        } catch (error) {
+            console.error("❌ Error in createcard:", error);
+            if (interaction.deferred) {
+                await interaction.editReply({ content: '❌ Something went wrong while processing your request.' });
+            } else {
+                await interaction.reply({ content: '❌ Something went wrong.', flags: ['Ephemeral'] });
             }
         }
-
-        // Skenario B: User kasih Input Manual (Timpa data otomatis)
-        if (customTitle) finalTitle = customTitle;
-        if (customArtist) finalArtist = customArtist;
-        if (customImage) finalImageUrl = customImage.url; // Gambar upload user prioritas utama
-
-        // Cek final apakah gambar berhasil didapat
-        if (!finalImageUrl) {
-            return interaction.editReply({ content: "❌ No image source found. Please provide a song link or upload an image." });
-        }
-
-        // 4. Generate Kartu (Panggil ImageProcessor)
-        const imageBuffer = await createMusicCard({
-            imageUrl: finalImageUrl,
-            title: finalTitle,
-            artist: finalArtist,
-            topText: customTag // Mengirim teks custom (misal: "MY FAV")
-        });
-
-        if (!imageBuffer) {
-            return interaction.editReply({ content: '❌ Failed to generate image canvas. The image URL might be invalid.' });
-        }
-
-        // 5. SUKSES? POTONG KUOTA (Panggil Satpam lagi buat update DB)
-        await incrementUserLimit(interaction.user.id, 'createcard');
-
-        // 6. Kirim Hasil ke Discord
-        const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
-        
-        // Hitung sisa kuota untuk ditampilkan di footer
-        // Jika owner, limitStatus.usageCount mungkin 0, jadi kita handle tampilan khususnya
-        let footerText = `Generated by ${interaction.user.username}`;
-        
-        if (interaction.user.id === process.env.OWNER_ID) {
-            footerText += ` • 👑 Owner Access`;
-        } else {
-            // Hitung sisa: Batas - (Pemakaian Sebelumnya + 1 yg barusan sukses)
-            const used = (limitStatus.usageCount || 0) + 1;
-            const left = Math.max(0, DAILY_LIMIT - used);
-            footerText += ` • Daily Quota: ${left}/${DAILY_LIMIT} left`;
-        }
-
-        const embed = new EmbedBuilder()
-            .setColor('Random')
-            .setImage('attachment://music-card.png')
-            .setFooter({ text: footerText });
-
-        await interaction.editReply({ 
-            embeds: [embed],
-            files: [attachment] 
-        });
-
-    } catch (error) {
-        console.error("Error in createcard:", error);
-        await interaction.editReply({ content: '❌ Something went wrong while processing your request.' });
     }
-  }
 };

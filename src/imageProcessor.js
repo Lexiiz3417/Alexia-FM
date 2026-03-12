@@ -57,7 +57,9 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     const CARD_WIDTH = 1200;
     const CARD_HEIGHT = 630;
     const COVER_SIZE = 450;
-    const MAX_ARTIST_CHARS = 25; 
+    
+    // --- FIX BUG MARGIN KANAN: Limit artist diturunin dikit ---
+    const MAX_ARTIST_CHARS = 24; 
     const WATERMARK_TEXT = "@alexiazaphyra";
     
     // Logic Top Text
@@ -73,8 +75,14 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     let rawTitle = title ? title : 'Unknown';
     let rawArtist = artist ? artist : 'Unknown';
 
-    if (rawTitle.length > 40) {
-        rawTitle = rawTitle.substring(0, 37) + '...';
+    // --- FIX BUG OVERFLOW TITIK-TITIK MENTOK KANAN ---
+    // Potong lebih awal, hapus spasi nyangkut pake trim(), baru kasih ...
+    if (rawTitle.length > 36) {
+        rawTitle = rawTitle.substring(0, 33).trim() + '...';
+    }
+
+    if (rawArtist.length > 40) {
+        rawArtist = rawArtist.substring(0, 37).trim() + '...';
     }
 
     const sanitize = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -90,7 +98,10 @@ export async function createMusicCard({ imageUrl, title, artist, topText }) {
     if (rawTitle.length > 12 || hasKanji) {
         titleFontSize = 50;       
         titleLineHeight = 60;     
-        maxTitleChars = 22;       
+        
+        // --- FIX BUG OVERFLOW TITIK-TITIK MENTOK KANAN ---
+        // Diturunkan dari 22 jadi 19 biar lebih milih turun baris daripada nabrak kanan
+        maxTitleChars = 19;       
     }
 
     const titleLines = wrapText(safeTitle, maxTitleChars);

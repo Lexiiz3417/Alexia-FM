@@ -10,15 +10,16 @@ import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { createMusicCard } from './imageProcessor.js'; 
 import { getRandomComment } from './commentGenerator.js'; 
 import { postToTelegram } from "./telegram.js"; 
+import { logPlayHistory } from './history.js'; // <--- CCTV IMPORT
 
 dotenv.config();
 
-// Akses Database
+// Akses Database (Keyv untuk state playlist)
 const db = new Keyv('sqlite://data/db.sqlite');
 
-// --- KONFIGURASI BARU ---
+// --- KONFIGURASI ---
 const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
-const HISTORY_LIMIT = 50; // Lagu tidak boleh muncul lagi dalam 50 putaran terakhir
+const HISTORY_LIMIT = 50; 
 
 /**
  * Fungsi Cerdas: Mengambil lagu berikutnya tapi ngecek History dulu
@@ -26,66 +27,49 @@ const HISTORY_LIMIT = 50; // Lagu tidak boleh muncul lagi dalam 50 putaran terak
 async function getNextTrack() {
   let shuffledPlaylist = await db.get('shuffled_playlist');
   let currentIndex = await db.get('playlist_index') || 0;
-  let history = await db.get('played_history') || []; // Ambil data history
+  let history = await db.get('played_history') || [];
 
-  // 1. Cek apakah Playlist Kosong/Habis? Reshuffle kalau perlu.
   if (!shuffledPlaylist || currentIndex >= shuffledPlaylist.length) {
     console.log("🔄 Playlist finished or empty. Reshuffling...");
     shuffledPlaylist = await getPlaylistTracks();
     
     if (!shuffledPlaylist || shuffledPlaylist.length === 0) return null;
     
-    // Kocok ulang (Shuffle Array)
     shuffledPlaylist = shuffledPlaylist.sort(() => Math.random() - 0.5);
-    
     await db.set('shuffled_playlist', shuffledPlaylist);
-    currentIndex = 0; // Reset index ke awal
+    currentIndex = 0; 
   }
   
-  // 2. LOOP PENCARIAN LAGU UNIK (Anti-Repeat Logic)
   let track = null;
   let attempts = 0;
   
-  // Kita loop playlist mulai dari currentIndex
   while (currentIndex < shuffledPlaylist.length) {
       const candidate = shuffledPlaylist[currentIndex];
-      
-      // Cek apakah URL lagu ini ada di history 50 lagu terakhir?
       const isRecentlyPlayed = history.includes(candidate.url);
 
       if (!isRecentlyPlayed) {
-          // YES! Lagu ini aman (belum pernah diputar baru-baru ini)
           track = candidate;
-          
-          // Geser index buat besok
           currentIndex++; 
           await db.set('playlist_index', currentIndex);
           
-          // Update History: Masukkan lagu ini, buang yang paling lama
           history.push(candidate.url);
           if (history.length > HISTORY_LIMIT) {
-              history.shift(); // Hapus yang paling tua (paling kiri)
+              history.shift(); 
           }
           await db.set('played_history', history);
           
-          break; // Keluar dari loop karena sudah dapet lagu
+          break; 
       } else {
-          // NO! Lagu ini baru aja diputar. SKIP!
-          console.log(`⚠️ Skipping track: "${candidate.title}" (Recently played). Looking for next...`);
-          currentIndex++; // Loncat ke lagu berikutnya di list
+          console.log(`⚠️ Skipping track: "${candidate.title}" (Recently played).`);
+          currentIndex++; 
       }
-
       attempts++;
-      // Safety break kalau playlist ternyata isinya lagu yang sama semua (mustahil sih, tapi jaga-jaga)
       if (attempts > 500) break; 
   }
 
-  // Fallback: Kalau saking sialnya semua sisa playlist itu history semua (kasus langka banget)
-  // Ambil aja lagu di index sekarang biarpun duplikat, daripada bot error/mogok.
   if (!track && shuffledPlaylist.length > 0) {
-      console.log("⚠️ Warning: Could not find unique track. Picking fallback.");
+      console.log("⚠️ Warning: Picking fallback track.");
       track = shuffledPlaylist[0]; 
-      // Reset playlist sekalian biar besok seger
       await db.set('playlist_index', shuffledPlaylist.length); 
   }
 
@@ -100,16 +84,13 @@ export async function performAutopost(client) {
     const diffTime = Math.abs(today - START_DATE);
     const dayNumber = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
     
-    // Panggil fungsi getNextTrack yang sudah "Pintar" tadi
     const initialTrack = await getNextTrack();
     
     if (!initialTrack) {
-        console.error("❌ Failed to get next track. Playlist might be empty.");
+        console.error("❌ Failed to get next track.");
         return false;
     }
     
-    console.log(`🎵 Processing Track: ${initialTrack.title} - ${initialTrack.artist}`);
-
     const odesliData = await getOdesliData(initialTrack.url);
     if (!odesliData) {
         console.error("❌ Failed to fetch Odesli data. Skipping.");
@@ -123,7 +104,7 @@ export async function performAutopost(client) {
         await updateBotPresence(client, finalTrack);
     }
 
-    // Generate Gambar
+    // Generate Gambar (High Quality Lanczos3)
     const imageBuffer = await createMusicCard({
         imageUrl: odesliData.imageUrl,
         title: finalTrack.name,
@@ -132,6 +113,10 @@ export async function performAutopost(client) {
     });
 
     if (!imageBuffer) return false;
+
+    // --- 📝 PASANG CCTV (HISTORY LOG) ---
+    // Dicatat sebelum posting ke socmed agar jika crash di tengah, data history tetap aman
+    logPlayHistory(finalTrack.name, finalTrack.artist, 'AUTOPOST', 'autopost');
 
     const caption = await generateCaption({ 
         day: dayNumber, 
@@ -144,22 +129,24 @@ export async function performAutopost(client) {
 
     // --- 1. FACEBOOK POSTING ---
     if (process.env.FACEBOOK_PAGE_ID) {
-        const postId = await postToFacebook(imageBuffer, caption);
-        if (postId) {
-            console.log(`✅ FB Post ID: ${postId}`);
-            await commentOnPost(postId, engagementComment);
-        }
+        try {
+            const postId = await postToFacebook(imageBuffer, caption);
+            if (postId) {
+                console.log(`✅ FB Post ID: ${postId}`);
+                await commentOnPost(postId, engagementComment);
+            }
+        } catch (e) { console.error("FB Post Error:", e.message); }
     }
 
     // --- 2. TELEGRAM POSTING ---
     if (process.env.TELEGRAM_BOT_TOKEN) {
-       await postToTelegram(imageBuffer, caption, engagementComment);
+        try {
+            await postToTelegram(imageBuffer, caption, engagementComment);
+        } catch (e) { console.error("Tele Post Error:", e.message); }
     }
 
     // --- 3. DISCORD POSTING ---
     console.log(`📣 Sending to Discord...`);
-    let successCount = 0;
-
     for await (const [key, value] of db.iterator()) {
        if (key && key.startsWith('sub:')) {
            const channelId = value;
@@ -172,17 +159,16 @@ export async function performAutopost(client) {
                 imageBuffer, 
                 channelId 
             });
-            successCount++;
            } catch (error) { 
                console.error(`Skipping channel ${channelId}:`, error.message); 
            }
        }
     }
     
-    console.log(`✅ Autopost Day #${dayNumber} completed.`);
+    console.log(`✅ Autopost Day #${dayNumber} completed and logged to history.`);
     return true;
   } catch (err) {
     console.error("❌ Autopost Error:", err);
     return false;
   }
-};
+}

@@ -7,10 +7,11 @@ import { generateCaption } from '../caption.js';
 import { getRandomComment } from '../commentGenerator.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { postToTelegram } from '../telegram.js';
+import { logPlayHistory } from '../history.js'; // CCTV Alexia Wrapped
 
 const data = new SlashCommandBuilder()
     .setName('manualpost')
-    .setDescription('OWNER ONLY: Post manual untuk menambal Day # yang bolong')
+    .setDescription('Post manual untuk menambal Day # yang bolong (OWNER ONLY)')
     .addStringOption(option =>
         option.setName('url')
             .setDescription('Link lagu (YouTube/Spotify/Apple Music)')
@@ -57,12 +58,16 @@ async function execute(interaction) {
             imageUrl: odesliData.imageUrl,
             title: odesliData.title,
             artist: odesliData.artist,
-            topText: day 
+            topText: `DAY #${day}` 
         });
 
         if (!imageBuffer) {
             return interaction.editReply("❌ Gagal merender gambar canvas.");
         }
+
+        // --- 📝 PASANG CCTV (HISTORY LOG) ---
+        // Kita catat sebagai 'manualpost' supaya tetap masuk hitungan Wrapped
+        logPlayHistory(odesliData.title, odesliData.artist, interaction.user.id, 'manualpost');
 
         const caption = await generateCaption({
             day: day,
@@ -72,22 +77,22 @@ async function execute(interaction) {
         });
         const engagementComment = await getRandomComment(odesliData.title, odesliData.artist);
 
-        let fbStatus = "➖ *Diabaikan*";
-        let teleStatus = "➖ *Diabaikan*";
-        let discordStatus = "➖ *Diabaikan*";
+        let fbStatus = "⚪ *Skipped*";
+        let teleStatus = "⚪ *Skipped*";
+        let discordStatus = "⚪ *Skipped*";
 
         // Eksekusi FB
         if (target === 'all' || target === 'facebook') {
             if (process.env.FACEBOOK_PAGE_ID) {
                 const postId = await postToFacebook(imageBuffer, caption);
                 if (postId) {
-                    fbStatus = "✅ **Sukses**";
+                    fbStatus = "✅ **Success**";
                     await commentOnPost(postId, engagementComment);
                 } else {
-                    fbStatus = "❌ **Gagal** (Cek log)";
+                    fbStatus = "❌ **Failed**";
                 }
             } else {
-                fbStatus = "⚠️ Config FB Kosong";
+                fbStatus = "⚠️ **No Config**";
             }
         }
 
@@ -96,56 +101,62 @@ async function execute(interaction) {
             if (process.env.TELEGRAM_BOT_TOKEN) {
                 try {
                     await postToTelegram(imageBuffer, caption, engagementComment);
-                    teleStatus = "✅ **Sukses**";
+                    teleStatus = "✅ **Success**";
                 } catch (e) {
-                    teleStatus = `❌ **Gagal**`;
+                    teleStatus = `❌ **Failed**`;
                 }
             } else {
-                teleStatus = "⚠️ Config Telegram Kosong";
+                teleStatus = "⚠️ **No Config**";
             }
         }
 
         // Eksekusi Discord
         if (target === 'all' || target === 'discord') {
-            const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
-            const embed = new EmbedBuilder()
-                .setColor('Random') 
-                .setDescription(caption)
-                .setImage('attachment://music-card.png');
+            try {
+                const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
+                const embed = new EmbedBuilder()
+                    .setColor('#b8256f') 
+                    .setDescription(caption)
+                    .setImage('attachment://music-card.png');
 
-            await interaction.channel.send({
-                content: engagementComment,
-                embeds: [embed],
-                files: [attachment]
-            });
-            discordStatus = "✅ **Terkirim di channel ini**";
+                await interaction.channel.send({
+                    content: engagementComment,
+                    embeds: [embed],
+                    files: [attachment]
+                });
+                discordStatus = "✅ **Sent to Channel**";
+            } catch (e) {
+                discordStatus = "❌ **Failed**";
+            }
         }
 
-        // --- BIKIN EMBED REPORT BIAR RAPI ---
+        // --- RENDER EMBED REPORT ESTETIK ---
         const reportEmbed = new EmbedBuilder()
-            .setColor('#2ecc71') // Warna hijau sukses
-            .setTitle(`✅ Manual Post Selesai! (Day #${day})`)
+            .setColor('#b8256f')
+            .setAuthor({ name: 'Manual Post Override', iconURL: interaction.client.user.displayAvatarURL() })
+            .setTitle(`✅ Successfully Reposted Day #${day}`)
+            .setThumbnail(odesliData.imageUrl)
             .addFields(
-                { name: '🎵 Info Lagu', value: `**${odesliData.title}**\n*${odesliData.artist}*`, inline: false },
-                { name: '🎯 Target Distribusi', value: `\`${target.toUpperCase()}\``, inline: false },
-                { 
-                    name: '📊 Status Pengiriman', 
-                    value: `📘 **Facebook:** ${fbStatus}\n✈️ **Telegram:** ${teleStatus}\n👾 **Discord:** ${discordStatus}`, 
-                    inline: false 
+                { name: '🎵 Song Info', value: `**${odesliData.title}**\n${odesliData.artist}`, inline: false },
+                { name: '📊 Distribution Report', value: 
+                    `🔹 **Facebook:** ${fbStatus}\n` +
+                    `🔹 **Telegram:** ${teleStatus}\n` +
+                    `🔹 **Discord:** ${discordStatus}`, 
+                  inline: false 
                 }
             )
-            .setFooter({ text: `Manual override executed by ${interaction.user.tag}` })
+            .setFooter({ text: `Manual Log Recorded • Executed by ${interaction.user.username}` })
             .setTimestamp();
 
-        // Kirim report berupa Embed
         await interaction.editReply({
-            content: '', // Kosongkan text raw
             embeds: [reportEmbed]
         });
 
     } catch (error) {
         console.error("❌ Manual Post Error:", error);
-        await interaction.editReply("❌ Terjadi kesalahan fatal saat memproses manual post.");
+        if (interaction.deferred) {
+            await interaction.editReply("❌ Terjadi kesalahan fatal saat memproses manual post.");
+        }
     }
 }
 
