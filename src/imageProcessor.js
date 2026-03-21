@@ -16,8 +16,39 @@ try {
     console.warn("⚠️ Custom fonts gagal diload di imageProcessor.");
 }
 
-export async function generateNowPlayingImage(song, dayCount) {
-    // UKURAN 2K (Dikali 2 dari sebelumnya)
+// --- HELPER CERDAS: TEXT WRAPPER ANTI KEPOTONG SADIS ---
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 2) {
+    const words = text.split(' ');
+    let line = '';
+    let currentY = y;
+    let lineCount = 1;
+
+    for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+
+        // Kalo kepanjangan, lempar ke baris bawah
+        if (testWidth > maxWidth && n > 0) {
+            if (lineCount >= maxLines) {
+                // Kalo udah batas maksimal baris, baru kita pasang elipsis (...)
+                ctx.fillText(line.trim() + '...', x, currentY);
+                return currentY;
+            }
+            ctx.fillText(line, x, currentY);
+            line = words[n] + ' ';
+            currentY += lineHeight;
+            lineCount++;
+        } else {
+            line = testLine;
+        }
+    }
+    ctx.fillText(line, x, currentY);
+    return currentY; // Balikin Y terakhir biar artis posisinya ngikutin
+}
+
+export async function generateNowPlayingImage(song, topTextParam) {
+    // UKURAN 2K
     const width = 1600; 
     const height = 900; 
     const canvas = createCanvas(width, height);
@@ -28,7 +59,6 @@ export async function generateNowPlayingImage(song, dayCount) {
 
     let bgImg, fgImg;
 
-    // Proses gambar via Sharp
     try {
         const res = await fetch(song.coverUrl);
         const buffer = await res.buffer();
@@ -65,28 +95,33 @@ export async function generateNowPlayingImage(song, dayCount) {
         ctx.fillRect(coverX, coverY, coverSize, coverSize);
         ctx.fillStyle = accentColor;
         ctx.font = `bold 80px ${mainFont}`;
-        ctx.fillText('( ˘ω˘ ) zZ', coverX + 100, coverY + 320); // Fallback Kaomoji Aman
+        ctx.fillText('( ˘ω˘ ) zZ', coverX + 100, coverY + 320); 
     }
 
-    // 3. Teks Info Lagu (Auto-Corrected dari Deezer)
+    // 3. Teks Info Lagu
     const textX = 820;
+    const maxTextWidth = 720; // Kasih margin sisa dari lebar canvas (1600)
     
-    // Day Banner
+    // PERBAIKAN BUG DAY #SHARED MUSIC
+    let displayTopText = String(topTextParam);
+    if (/^\d+$/.test(displayTopText)) {
+        displayTopText = `DAY #${displayTopText}`; // Kalau isinya murni angka doang
+    }
+
+    // Gambar Day Banner / Tag
     ctx.fillStyle = accentColor;
     ctx.font = `bold 36px ${mainFont}`;
-    ctx.fillText(`DAY #${dayCount}`, textX, 360);
+    ctx.fillText(displayTopText, textX, 360);
 
-    // Title (Anti-Tofu & Bersih)
+    // Gambar Title (Bisa 2 Baris, Posisi Dinamis)
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 72px ${mainFont}`;
-    let title = song.title || "Unknown Title";
-    ctx.fillText(title.length > 25 ? title.substring(0, 22) + '...' : title, textX, 460);
+    const nextY = wrapText(ctx, song.title || "Unknown Title", textX, 460, maxTextWidth, 80, 2);
 
-    // Artist
+    // Gambar Artist (1 Baris) di bawah title yang posisinya dinamis
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.font = `bold 48px ${mainFont}`;
-    let artist = song.artist || "Unknown Artist";
-    ctx.fillText(artist.length > 30 ? artist.substring(0, 27) + '...' : artist, textX, 540);
+    wrapText(ctx, song.artist || "Unknown Artist", textX, nextY + 70, maxTextWidth, 60, 1);
 
     // Watermark
     ctx.textAlign = 'right';
@@ -96,3 +131,4 @@ export async function generateNowPlayingImage(song, dayCount) {
 
     return canvas.toBuffer();
 }
+
