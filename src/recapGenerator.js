@@ -1,135 +1,99 @@
 // src/recapGenerator.js
-
-import { createCanvas, loadImage, registerFont } from 'canvas';
+import { createCanvas, registerFont } from 'canvas';
 import sharp from 'sharp';
 import fetch from 'node-fetch';
-import { getOdesliData } from './songlink.js';
-import { getPlaylistTracks } from './ytmusic.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// --- MANTRA JALAN NINJA (LOAD FONT LOKAL) ---
+// Import mesin pencari cover HD lu!
+import { getTrackInfo } from './coverFinder.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// --- DAFTARIN FONT ANTI-TOFU ---
+// Pastiin file .ttf ini ada di folder /fonts !
 try {
-    const fontPath = path.join(__dirname, '../fonts/JetBrainsMono-Bold.ttf');
-    registerFont(fontPath, { family: 'JetBrains Mono' });
+    registerFont(path.join(__dirname, '..', 'fonts', 'JetBrainsMono-Bold.ttf'), { family: 'JetBrains Mono', weight: 'bold' });
+    registerFont(path.join(__dirname, '..', 'fonts', 'NotoSansJP-Bold.ttf'), { family: 'Noto Sans JP', weight: 'bold' });
+    console.log("✅ Fonts loaded successfully!");
 } catch (e) {
-    console.error("❌ Gagal load font lokal:", e.message);
+    console.warn("⚠️ Custom fonts gagal diload. Pastikan folder /fonts dan file .ttf tersedia.");
 }
 
-// --- HELPER 1: CARI COVER JUARA 1 (3 LAPIS PELINDUNG) ---
-async function getCoverWinner(title, artist) {
-    if (!title || !artist) return null;
-    const query = encodeURIComponent(`${title} ${artist}`);
-
-    // LAPIS 1: Coba cari di YouTube Music / Playlist lu
+// --- HELPER: SHARP IMAGE PROCESSOR ---
+async function prepareImages(coverUrl) {
+    if (!coverUrl) return null;
     try {
-        const playlist = await getPlaylistTracks();
-        const found = playlist.find(t => {
-            const tTitle = (t.title || "").toLowerCase();
-            const sTitle = title.toLowerCase();
-            return tTitle.includes(sTitle) || sTitle.includes(tTitle);
-        });
-        if (found && found.thumbnails && found.thumbnails.length > 0) {
-            return found.thumbnails[found.thumbnails.length - 1].url.replace(/=w\d+-h\d+.*/, '=w1200-h1200-l100-rj');
-        }
-    } catch (e) {
-        console.log("⚠️ YT Playlist error, mencoba lapis 2...");
-    }
+        const res = await fetch(coverUrl);
+        const buffer = await res.buffer();
 
-    // LAPIS 2: Coba cari pakai Odesli API
-    try {
-        const searchData = await getOdesliData(`https://music.youtube.com/search?q=${query}`);
-        if (searchData && searchData.imageUrl) {
-            return searchData.imageUrl;
-        }
-    } catch (e) {
-        console.log("⚠️ Odesli error, mencoba lapis 3...");
-    }
-
-    // LAPIS 3: Fallback Paling Gacor -> iTunes / Apple Music API (Anti-mati)
-    try {
-        const itunesUrl = `https://itunes.apple.com/search?term=${query}&entity=song&limit=1`;
-        const res = await fetch(itunesUrl);
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
-            // Apple ngasih ukuran 100x100, kita retas linknya biar ngasih resolusi HD 600x600
-            return data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-        }
-    } catch (e) {
-        console.log("⚠️ iTunes API error.");
-    }
-
-    // Kalau 3 lapis jebol semua, baru return null (buat trigger placeholder ALEXIA FM)
-    return null; 
-}
-
-// --- HELPER 2: SHARP CONVERTER (Ubah WebP ke PNG & Bikin Efek Blur) ---
-async function prepareImages(url) {
-    if (!url) return null;
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return null; // Cegah error kalau server ngasih 404/Forbidden
-        
-        const buffer = Buffer.from(await res.arrayBuffer());
-
-        const bgBuffer = await sharp(buffer)
-            .resize(800, 1000, { fit: 'cover' })
-            .blur(40) 
-            .modulate({ brightness: 0.4 }) 
-            .png() 
+        // Background: Blur parah biar estetik
+        const bgImgBuf = await sharp(buffer)
+            .resize(1600, 2000, { fit: 'cover' }) // UKURAN 2K!
+            .blur(50)
+            .modulate({ brightness: 0.6 })
             .toBuffer();
 
-        const fgBuffer = await sharp(buffer)
-            .resize(320, 320, { fit: 'cover' })
-            .png()
+        // Foreground: Kotak HD tajam
+        const fgImgBuf = await sharp(buffer)
+            .resize(640, 640, { fit: 'cover' }) // Cover dibesarin 2x
             .toBuffer();
 
+        const { loadImage } = await import('canvas');
         return {
-            bgImg: await loadImage(bgBuffer),
-            fgImg: await loadImage(fgBuffer)
+            bgImg: await loadImage(bgImgBuf),
+            fgImg: await loadImage(fgImgBuf)
         };
     } catch (e) {
-        console.error("Sharp Converter Error:", e.message);
+        console.error("⚠️ Gagal memproses gambar dengan Sharp:", e.message);
         return null;
     }
 }
 
-// --- MESIN UTAMA: CANVAS ---
+// --- MESIN UTAMA: CANVAS 2K ---
 export async function generateRecapImage(type, songs) {
-    const width = 800;
-    const height = 1000;
+    const width = 1600; // RESOLUSI NAIK 2X LIPAT!
+    const height = 2000;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    const mainFont = '"JetBrains Mono"'; 
+    // SENJATA ANTI-TOFU (JetBrains + Noto Sans)
+    const mainFont = '"JetBrains Mono", "Noto Sans JP", sans-serif'; 
     const accentColor = '#FFD700';
     
-    const topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
+    let topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
     let finalImages = null;
     
-    // Placeholder anti-mati (Background gelap, teks Kuning Gold)
-    const defaultCoverUrl = 'https://placehold.co/600x600/1a1a1a/FFD700.png?text=ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧'; 
+    // --- 1. INTEGRASI COVER FINDER (PHASE 1) ---
+    let displayTitle = topSong.title;
+    let displayArtist = topSong.artist;
+    let coverUrl = null;
 
-    // --- 1. PROSES GAMBAR DENGAN SHARP ---
     if (topSong.title !== "Unknown") {
-        let coverUrl = await getCoverWinner(topSong.title, topSong.artist);
+        const hdInfo = await getTrackInfo(topSong.title, topSong.artist);
+        if (hdInfo) {
+            displayTitle = hdInfo.title; // Pake nama asli dari Deezer
+            displayArtist = hdInfo.artist; // Bye "Release" / "Topic"!
+            coverUrl = hdInfo.coverUrl;
+        }
         
-        if (coverUrl) finalImages = await prepareImages(coverUrl);
-        // Kalau cover asli gagal diproses Sharp, pake placeholder
-        if (!finalImages) finalImages = await prepareImages(defaultCoverUrl);
+        // Coba proses gambarnya
+        if (coverUrl) {
+            finalImages = await prepareImages(coverUrl);
+        }
     }
 
     // --- 2. RENDER BACKGROUND ---
     if (finalImages && finalImages.bgImg) {
         ctx.drawImage(finalImages.bgImg, 0, 0, width, height);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Extra layer gelap tipis biar teks kebaca
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Extra layer gelap
         ctx.fillRect(0, 0, width, height);
     } else {
+        // FALLBACK KALO GAK ADA GAMBAR: Gradien Estetik Abu-abu Gelap
         const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, '#0f0f0f');
-        grad.addColorStop(1, '#1a1a1a');
+        grad.addColorStop(0, '#111111');
+        grad.addColorStop(1, '#222222');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, width, height);
     }
@@ -137,73 +101,79 @@ export async function generateRecapImage(type, songs) {
     // --- 3. HEADER ---
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 32px ${mainFont}`;
-    ctx.fillText(`ALEXIA ${type} RECAP`, width / 2, 80);
+    ctx.font = `bold 64px ${mainFont}`; // Ukuran font x2
+    ctx.fillText(`ALEXIA ${type.toUpperCase()} RECAP`, width / 2, 160);
     
     ctx.fillStyle = accentColor;
-    ctx.font = `20px ${mainFont}`;
-    ctx.fillText(new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }), width / 2, 115);
+    ctx.font = `bold 40px ${mainFont}`;
+    ctx.fillText(new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }), width / 2, 230);
 
     // --- 4. TOP 1 SECTION ---
     if (topSong.title !== "Unknown") {
-        const coverSize = 320;
+        const coverSize = 640;
         const x = (width - coverSize) / 2;
-        const y = 160;
+        const y = 320;
 
         if (finalImages && finalImages.fgImg) {
-            ctx.shadowBlur = 40; 
-            ctx.shadowColor = 'rgba(255, 215, 0, 0.2)';
+            ctx.shadowBlur = 80; 
+            ctx.shadowColor = 'rgba(255, 215, 0, 0.3)';
             ctx.drawImage(finalImages.fgImg, x, y, coverSize, coverSize);
             ctx.shadowBlur = 0;
         } else {
-            ctx.fillStyle = '#333'; ctx.fillRect(x, y, coverSize, coverSize);
+            // FALLBACK NATIVE CANVAS (Logo Inisial Alexia FM kalo API mati semua)
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(x, y, coverSize, coverSize);
+            ctx.fillStyle = accentColor;
+            ctx.font = `bold 120px ${mainFont}`;
+            ctx.fillText('ᶻ 𝗓 𐰁 .ᐟ', width / 2, y + 360);
         }
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 38px ${mainFont}`;
-        ctx.fillText(topSong.title, width / 2, 535);
+        ctx.font = `bold 76px ${mainFont}`;
+        ctx.fillText(displayTitle.length > 25 ? displayTitle.substring(0, 25) + '...' : displayTitle, width / 2, 1070);
         
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.font = `24px ${mainFont}`;
-        ctx.fillText(topSong.artist, width / 2, 575);
+        ctx.font = `bold 48px ${mainFont}`;
+        ctx.fillText(displayArtist, width / 2, 1150);
         
         ctx.fillStyle = accentColor;
-        ctx.font = `bold 22px ${mainFont}`;
-        ctx.fillText(`TOP 1 • ${topSong.play_count} PLAYS THIS ${type}`, width / 2, 615);
+        ctx.font = `bold 44px ${mainFont}`;
+        ctx.fillText(`TOP 1 • ${topSong.play_count} PLAYS THIS ${type.toUpperCase()}`, width / 2, 1230);
     }
 
     // --- 5. LIST RANKING ---
-    const listStartTop = 680; 
+    const listStartTop = 1360; 
     songs.slice(1).forEach((song, index) => {
         const rank = index + 2;
-        const y = listStartTop + (index * 62);
+        const y = listStartTop + (index * 124); // Spacing x2
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-        if (ctx.roundRect) { ctx.roundRect(80, y - 42, width - 160, 52, 10); } 
-        else { ctx.rect(80, y - 42, width - 160, 52); }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        if (ctx.roundRect) { ctx.roundRect(160, y - 84, width - 320, 104, 20); } 
+        else { ctx.rect(160, y - 84, width - 320, 104); }
         ctx.fill();
 
         ctx.textAlign = 'left';
         ctx.fillStyle = rank === 2 ? accentColor : (rank === 3 ? '#C0C0C0' : '#ffffff');
-        ctx.font = `bold 22px ${mainFont}`;
-        ctx.fillText(`${rank}`, 110, y - 6);
+        ctx.font = `bold 44px ${mainFont}`;
+        ctx.fillText(`${rank}`, 220, y - 12);
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = `18px ${mainFont}`;
+        ctx.font = `bold 36px ${mainFont}`;
+        // Ambil clean data buat list sisanya kalo perlu, tp sementara dari DB lgsg jg oke
         const info = `${song.title || 'Unknown'} - ${song.artist || 'Unknown'}`;
-        ctx.fillText(info.length > 40 ? info.substring(0, 37) + '...' : info, 160, y - 6);
+        ctx.fillText(info.length > 50 ? info.substring(0, 47) + '...' : info, 320, y - 12);
 
         ctx.textAlign = 'right';
         ctx.fillStyle = accentColor;
-        ctx.font = `bold 16px ${mainFont}`;
-        ctx.fillText(`${song.play_count || 0} PTS`, width - 110, y - 6);
+        ctx.font = `bold 32px ${mainFont}`;
+        ctx.fillText(`${song.play_count || 0} PTS`, width - 220, y - 12);
     });
 
     // --- 6. FOOTER WATERMARK ---
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.font = `italic 16px ${mainFont}`;
-    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 35);
+    ctx.font = `italic 32px ${mainFont}`;
+    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 70);
 
     return canvas.toBuffer();
 }
