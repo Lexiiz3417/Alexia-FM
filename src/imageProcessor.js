@@ -61,7 +61,7 @@ export async function generateNowPlayingImage(song, topTextParam) {
 
     try {
         const res = await fetch(song.coverUrl);
-        const buffer = await res.buffer();
+        const buffer = Buffer.from(await res.arrayBuffer());
 
         const bgBuf = await sharp(buffer).resize(1600, 900, { fit: 'cover' }).blur(40).modulate({ brightness: 0.5 }).toBuffer();
         const fgBuf = await sharp(buffer).resize(600, 600, { fit: 'cover' }).toBuffer();

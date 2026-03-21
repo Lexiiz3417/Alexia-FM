@@ -5,73 +5,81 @@ function cleanMetadata(rawTitle, rawArtist) {
     let title = rawTitle || "";
     let artist = rawArtist || "";
 
-    // 1. Deteksi penyakit YouTube Music
     const isBadArtist = artist.toLowerCase().includes('topic') || 
                         artist.toLowerCase() === 'release' || 
                         artist.toLowerCase() === 'various artists';
 
     if (isBadArtist) {
-        // Kalau nama artisnya ngaco, kita cek apakah judulnya pake format "Artis - Judul"
         if (title.includes(' - ')) {
             const parts = title.split(' - ');
-            artist = parts[0].trim(); // Ambil bagian depan sebagai artis
-            title = parts.slice(1).join(' - ').trim(); // Sisanya jadi judul
+            artist = parts[0].trim(); 
+            title = parts.slice(1).join(' - ').trim(); 
         } else {
-            // Kalau gak ada strip, kosongin aja artisnya biar Deezer nebak dari judul
             artist = ""; 
         }
     }
 
-    // 2. Bersihin embel-embel video dari judul (misal: "[MV]", "(Official Audio)", dll)
     title = title.replace(/\s*[\(\[].*?(official|video|audio|lyric|mv|visualizer).*?[\)\]]\s*/gi, '').trim();
 
     return { cleanTitle: title, cleanArtist: artist };
 }
 
+// 🌟 ANTI-COCOKLOGI VERIFIER
+// Ngecek apakah judul asli masih "nyambung" sama hasil dari Deezer
+function verifyMatch(inputTitle, resultTitle) {
+    if (!inputTitle || !resultTitle) return false;
+    const t1 = inputTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const t2 = resultTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return t1.includes(t2) || t2.includes(t1);
+}
 
 export async function getTrackInfo(rawTitle, rawArtist) {
-    // Bersihin teksnya dulu sebelum nyari
     const { cleanTitle, cleanArtist } = cleanMetadata(rawTitle, rawArtist);
     const searchQuery = encodeURIComponent(`${cleanTitle} ${cleanArtist}`.trim());
 
-    // --- LAPIS 1: DEEZER API ---
+    // --- LAPIS 1: DEEZER ---
     try {
-        const dzUrl = `https://api.deezer.com/search?q=${searchQuery}&limit=1`;
+        const dzUrl = `https://api.deezer.com/search?q=${searchQuery}&limit=3`; 
         const res = await fetch(dzUrl);
         const data = await res.json();
 
         if (data.data && data.data.length > 0) {
-            const track = data.data[0];
-            return {
-                title: track.title, 
-                artist: track.artist.name, 
-                coverUrl: track.album.cover_xl 
-            };
+            // Cari hasil yang judulnya BENERAN mirip (bukan cocoklogi)
+            const validTrack = data.data.find(t => verifyMatch(cleanTitle, t.title));
+            
+            if (validTrack) {
+                return {
+                    title: validTrack.title,
+                    artist: validTrack.artist.name,
+                    coverUrl: validTrack.album.cover_xl 
+                };
+            } else {
+                console.log(`⚠️ Deezer hasil ngawur (Cocoklogi). Input: "${cleanTitle}". Di-skip!`);
+            }
         }
     } catch (e) {
-        console.error("⚠️ Deezer API Error, turun ke Lapis 2...", e.message);
+        console.error("⚠️ Deezer API Error:", e.message);
     }
 
-    // --- LAPIS 2: iTUNES / APPLE MUSIC API (CADANGAN) ---
+    // --- LAPIS 2: iTUNES ---
     try {
-        const itunesUrl = `https://itunes.apple.com/search?term=${searchQuery}&entity=song&limit=1`;
+        const itunesUrl = `https://itunes.apple.com/search?term=${searchQuery}&entity=song&limit=3`;
         const res = await fetch(itunesUrl);
         const data = await res.json();
 
         if (data.results && data.results.length > 0) {
-            const track = data.results[0];
-            return {
-                title: track.trackName,
-                artist: track.artistName,
-                // iTunes ngasih ukuran 100x100, kita "hack" URL-nya paksa jadi 1000x1000
-                coverUrl: track.artworkUrl100.replace('100x100bb', '1000x1000bb') 
-            };
+            const validTrack = data.results.find(t => verifyMatch(cleanTitle, t.trackName));
+            if (validTrack) {
+                return {
+                    title: validTrack.trackName,
+                    artist: validTrack.artistName,
+                    coverUrl: validTrack.artworkUrl100.replace('100x100bb', '1000x1000bb') 
+                };
+            }
         }
     } catch (e) {
-        console.error("⚠️ iTunes API Error.", e.message);
+        console.error("⚠️ iTunes API Error:", e.message);
     }
 
-    // --- LAPIS 3: GAGAL SEMUA ---
-    // Balikin null. Nanti di Phase 2, kalo dapet 'null', Canvas bakal otomatis nggambar LOGO ALEXIA FM.
     return null; 
 }
