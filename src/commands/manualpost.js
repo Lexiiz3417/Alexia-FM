@@ -2,7 +2,8 @@
 
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getOdesliData } from '../songlink.js';
-import { createMusicCard } from '../imageProcessor.js';
+import { generateNowPlayingImage } from '../imageProcessor.js';
+import { getTrackInfo } from '../coverFinder.js';
 import { generateCaption } from '../caption.js';
 import { getRandomComment } from '../commentGenerator.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
@@ -54,28 +55,41 @@ async function execute(interaction) {
             return interaction.editReply("❌ Gagal mengambil metadata lagu dari link tersebut. Coba link lain.");
         }
 
-        const imageBuffer = await createMusicCard({
-            imageUrl: odesliData.imageUrl,
-            title: odesliData.title,
-            artist: odesliData.artist,
-            topText: `DAY #${day}` 
-        });
+        let trackTitle = odesliData.title;
+        let trackArtist = odesliData.artist;
+        let trackCover = odesliData.imageUrl;
+
+        // 🌟 THE MAGIC: Cuci datanya ke Deezer sebelum digambar!
+        const hdInfo = await getTrackInfo(trackTitle, trackArtist);
+        if (hdInfo) {
+            trackTitle = hdInfo.title || trackTitle;
+            trackArtist = hdInfo.artist || trackArtist;
+            if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
+        }
+
+        const songObj = {
+            title: trackTitle,
+            artist: trackArtist,
+            coverUrl: trackCover
+        };
+
+        const imageBuffer = await generateNowPlayingImage(songObj, day);
 
         if (!imageBuffer) {
             return interaction.editReply("❌ Gagal merender gambar canvas.");
         }
 
         // --- 📝 PASANG CCTV (HISTORY LOG) ---
-        // Kita catat sebagai 'manualpost' supaya tetap masuk hitungan Wrapped
-        logPlayHistory(odesliData.title, odesliData.artist, interaction.user.id, 'manualpost');
+        // Catat ke database pakai link cover HD-nya
+        logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'manualpost', trackCover);
 
         const caption = await generateCaption({
             day: day,
-            title: odesliData.title,
-            artist: odesliData.artist,
+            title: trackTitle,
+            artist: trackArtist,
             link: odesliData.pageUrl
         });
-        const engagementComment = await getRandomComment(odesliData.title, odesliData.artist);
+        const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
         let fbStatus = "⚪ *Skipped*";
         let teleStatus = "⚪ *Skipped*";
@@ -135,9 +149,9 @@ async function execute(interaction) {
             .setColor('#b8256f')
             .setAuthor({ name: 'Manual Post Override', iconURL: interaction.client.user.displayAvatarURL() })
             .setTitle(`✅ Successfully Reposted Day #${day}`)
-            .setThumbnail(odesliData.imageUrl)
+            .setThumbnail(trackCover) // Pake Thumbnail HD di reportnya
             .addFields(
-                { name: '🎵 Song Info', value: `**${odesliData.title}**\n${odesliData.artist}`, inline: false },
+                { name: '🎵 Song Info', value: `**${trackTitle}**\n${trackArtist}`, inline: false },
                 { name: '📊 Distribution Report', value: 
                     `🔹 **Facebook:** ${fbStatus}\n` +
                     `🔹 **Telegram:** ${teleStatus}\n` +

@@ -6,7 +6,10 @@ import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence, sendAutoPostEmbed } from '../discord.js'; 
-import { createMusicCard } from '../imageProcessor.js';
+// 👇 FIX 1: Import Canvas 2K
+import { generateNowPlayingImage } from '../imageProcessor.js';
+// 👇 FIX 2: Import Otak Deezer
+import { getTrackInfo } from '../coverFinder.js'; 
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { getRandomComment } from '../commentGenerator.js'; 
 import { postToTelegram } from '../telegram.js'; 
@@ -62,29 +65,43 @@ export default {
             const odesliData = await getOdesliData(initialTrack.url);
             if (!odesliData) return interaction.editReply({ content: '❌ Failed to fetch Odesli.' });
             
-            const finalTrack = { name: odesliData.title, artist: odesliData.artist };
+            let trackTitle = odesliData.title;
+            let trackArtist = odesliData.artist;
+            let trackCover = odesliData.imageUrl;
+
+            // 🌟 THE MAGIC: Cuci datanya ke Deezer sebelum dipost!
+            const hdInfo = await getTrackInfo(trackTitle, trackArtist);
+            if (hdInfo) {
+                trackTitle = hdInfo.title || trackTitle;
+                trackArtist = hdInfo.artist || trackArtist;
+                if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
+            }
+
+            const finalTrack = { name: trackTitle, artist: trackArtist };
             
             if (interaction.client) updateBotPresence(interaction.client, finalTrack); 
 
             const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
             const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
-            // 2. GENERATE IMAGE (High Quality)
-            const imageBuffer = await createMusicCard({
-                imageUrl: odesliData.imageUrl,
-                title: finalTrack.name,
-                artist: finalTrack.artist,
-                topText: `TEST DAY #${dayNumber}`
-            });
+            // 2. GENERATE IMAGE (High Quality 2K)
+            const songObj = {
+                title: trackTitle,
+                artist: trackArtist,
+                coverUrl: trackCover
+            };
+
+            // 👇 FIX 3: Panggil Canvas yang baru
+            const imageBuffer = await generateNowPlayingImage(songObj, `TEST DAY #${dayNumber}`);
 
             if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
             // --- 3. PASANG CCTV (HISTORY LOG) ---
-            // Dicatat sebagai 'testpost' supaya bisa difilter jika tidak ingin masuk recap utama
-            logPlayHistory(finalTrack.name, finalTrack.artist, interaction.user.id, 'testpost');
+            // Dicatat sebagai 'testpost' dengan URL Cover HD
+            logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'testpost', trackCover);
 
-            const caption = await generateCaption({ day: dayNumber, title: finalTrack.name, artist: finalTrack.artist, link: odesliData.pageUrl });
-            const engagementComment = await getRandomComment(finalTrack.name, finalTrack.artist);
+            const caption = await generateCaption({ day: dayNumber, title: trackTitle, artist: trackArtist, link: odesliData.pageUrl });
+            const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
             // --- 4. EKSEKUSI PLATFORM ---
             let fbStatus = "⚪ *Skipped*";
@@ -121,7 +138,7 @@ export default {
                         client: interaction.client,
                         comment: engagementComment,
                         caption: caption,
-                        imageUrl: odesliData.imageUrl,
+                        imageUrl: trackCover, // Pake gambar HD buat embed
                         imageBuffer: imageBuffer,
                         channelId: savedChannelId 
                     });
@@ -136,14 +153,14 @@ export default {
                 .setColor('#2ecc71') // Hijau Emerald
                 .setAuthor({ name: 'System Simulation', iconURL: interaction.client.user.displayAvatarURL() })
                 .setTitle(`🧪 Autopost Test Complete: Day #${dayNumber}`)
-                .setDescription(`Successfully simulated a post for **${finalTrack.name}** by **${finalTrack.artist}**.`)
+                .setDescription(`Successfully simulated a post for **${trackTitle}** by **${trackArtist}**.`)
                 .addFields(
                     { name: '🌐 Platform Status', value: '\u200B' },
                     { name: '🔹 Discord', value: discordStatus, inline: true },
                     { name: '🔹 Facebook', value: fbStatus, inline: true },
                     { name: '🔹 Telegram', value: teleStatus, inline: true }
                 )
-                .setThumbnail(odesliData.imageUrl)
+                .setThumbnail(trackCover) // Thumbnail di report juga jadi HD!
                 .setFooter({ text: `Admin: ${interaction.user.username} • History Logged`, iconURL: interaction.user.displayAvatarURL() })
                 .setTimestamp();
             
