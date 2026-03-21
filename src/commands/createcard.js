@@ -2,7 +2,8 @@
 
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getOdesliData } from '../songlink.js';
-import { createMusicCard } from '../imageProcessor.js';
+import { generateNowPlayingImage } from '../imageProcessor.js';
+import { getTrackInfo } from '../coverFinder.js'; 
 import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; 
 import { logPlayHistory } from '../history.js'; // CCTV Alexia Wrapped
 
@@ -72,6 +73,17 @@ export default {
                     finalTitle = odesliData.title;
                     finalArtist = odesliData.artist;
                     finalImageUrl = odesliData.imageUrl;
+
+                    // 🌟 THE MAGIC: Saring pakai Deezer biar HD & Bersih!
+                    // (Catatan: Kita hanya pakai Deezer kalau user TIDAK memaksa pakai input manual)
+                    if (!customTitle && !customArtist && !customImage) {
+                        const hdInfo = await getTrackInfo(finalTitle, finalArtist);
+                        if (hdInfo) {
+                            finalTitle = hdInfo.title || finalTitle;
+                            finalArtist = hdInfo.artist || finalArtist;
+                            if (hdInfo.coverUrl) finalImageUrl = hdInfo.coverUrl;
+                        }
+                    }
                 } else if (!customTitle) {
                     return interaction.editReply({ content: "❌ Couldn't fetch data from that link. Try entering Title & Image manually." });
                 }
@@ -86,20 +98,21 @@ export default {
                 return interaction.editReply({ content: "❌ No image source found." });
             }
 
-            // 4. Generate Kartu (Panggil ImageProcessor)
-            const imageBuffer = await createMusicCard({
-                imageUrl: finalImageUrl,
+            // 4. Generate Kartu (Panggil ImageProcessor 2K)
+            const songObj = {
                 title: finalTitle,
                 artist: finalArtist,
-                topText: customTag
-            });
+                coverUrl: finalImageUrl
+            };
+
+            const imageBuffer = await generateNowPlayingImage(songObj, customTag);
 
             if (!imageBuffer) {
                 return interaction.editReply({ content: '❌ Failed to generate image canvas.' });
             }
 
             // --- 5. PASANG CCTV (HISTORY LOG) ---
-            logPlayHistory(finalTitle, finalArtist, interaction.user.id, 'createcard');
+            logPlayHistory(finalTitle, finalArtist, interaction.user.id, 'createcard', finalImageUrl);
 
             // 6. SUKSES? POTONG KUOTA
             await incrementUserLimit(interaction.user.id, 'createcard');
