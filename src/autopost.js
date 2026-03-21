@@ -7,26 +7,18 @@ import { getOdesliData } from "./songlink.js";
 import { generateCaption } from "./caption.js";
 import { postToFacebook, commentOnPost } from "./facebook.js";
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
-import { createMusicCard } from './imageProcessor.js'; 
+import { generateNowPlayingImage } from './imageProcessor.js'; 
 import { getRandomComment } from './commentGenerator.js'; 
 import { postToTelegram } from "./telegram.js"; 
 import { logPlayHistory } from './history.js'; 
-
-// 🌟 IMPORT OTAK PENCARI GAMBAR KITA (PHASE 1)
 import { getTrackInfo } from './coverFinder.js'; 
 
 dotenv.config();
 
-// Akses Database (Keyv untuk state playlist)
 const db = new Keyv('sqlite://data/db.sqlite');
-
-// --- KONFIGURASI ---
 const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
 const HISTORY_LIMIT = 50; 
 
-/**
- * Fungsi Cerdas: Mengambil lagu berikutnya tapi ngecek History dulu
- */
 async function getNextTrack() {
     let shuffledPlaylist = await db.get('shuffled_playlist');
     let currentIndex = await db.get('playlist_index') || 0;
@@ -100,20 +92,18 @@ export async function performAutopost(client) {
             return false;
         }
 
-        // --- Variabel Default dari Odesli ---
         let trackTitle = odesliData.title;
         let trackArtist = odesliData.artist;
         let trackCover = odesliData.imageUrl;
 
-        // 🌟 THE MAGIC: Panggil Cover Engine (Deezer) buat nyuci data!
         console.log(`🔍 Memurnikan metadata lagu: ${trackTitle} - ${trackArtist}...`);
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
 
         if (hdInfo) {
-            trackTitle = hdInfo.title || trackTitle;        // Judul bersih
-            trackArtist = hdInfo.artist || trackArtist;      // Artis bersih (Gak ada "Release")
+            trackTitle = hdInfo.title || trackTitle;        
+            trackArtist = hdInfo.artist || trackArtist;      
             if (hdInfo.coverUrl) {
-                trackCover = hdInfo.coverUrl;                // Cover HD 1000x1000 Square!
+                trackCover = hdInfo.coverUrl;                
             }
             console.log(`✅ Dimurnikan via API: ${trackTitle} - ${trackArtist}`);
         } else {
@@ -122,35 +112,31 @@ export async function performAutopost(client) {
 
         const finalTrack = { name: trackTitle, artist: trackArtist };
 
-        // Update Status Bot di Discord
         if (client) {
             await updateBotPresence(client, finalTrack);
         }
 
-        // Generate Gambar (High Quality) pake data yg udah bersih
-        const imageBuffer = await createMusicCard({
-            imageUrl: trackCover, // <-- PAKE COVER HD DEEZER
-            title: trackTitle,    // <-- PAKE JUDUL BERSIH
-            artist: trackArtist,  // <-- PAKE ARTIS BERSIH
-            topText: `DAY #${dayNumber}`
-        });
+        // 👇 INI JUGA UDAH GUA FIX CARA MANGGIL FUNGSINYA 👇
+        const songObj = {
+            title: trackTitle,
+            artist: trackArtist,
+            coverUrl: trackCover
+        };
+        const imageBuffer = await generateNowPlayingImage(songObj, dayNumber);
 
         if (!imageBuffer) return false;
 
-        // --- 📝 PASANG CCTV (HISTORY LOG) ---
-        // Catat ke DB. Parameter ke-5 adalah trackCover (link gambar HD)
         logPlayHistory(trackTitle, trackArtist, 'AUTOPOST', 'autopost', trackCover);
 
         const caption = await generateCaption({ 
             day: dayNumber, 
             title: trackTitle, 
             artist: trackArtist, 
-            link: odesliData.pageUrl // Link streaming tetep aman dari Odesli
+            link: odesliData.pageUrl 
         });
         
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-        // --- 1. FACEBOOK POSTING ---
         if (process.env.FACEBOOK_PAGE_ID) {
             try {
                 const postId = await postToFacebook(imageBuffer, caption);
@@ -161,14 +147,12 @@ export async function performAutopost(client) {
             } catch (e) { console.error("FB Post Error:", e.message); }
         }
 
-        // --- 2. TELEGRAM POSTING ---
         if (process.env.TELEGRAM_BOT_TOKEN) {
             try {
                 await postToTelegram(imageBuffer, caption, engagementComment);
             } catch (e) { console.error("Tele Post Error:", e.message); }
         }
 
-        // --- 3. DISCORD POSTING ---
         console.log(`📣 Sending to Discord...`);
         for await (const [key, value] of db.iterator()) {
             if (key && key.startsWith('sub:')) {
@@ -178,7 +162,7 @@ export async function performAutopost(client) {
                         client, 
                         comment: engagementComment, 
                         caption, 
-                        imageUrl: trackCover, // <-- Pake Cover HD di embed URL Discord
+                        imageUrl: trackCover, 
                         imageBuffer, 
                         channelId 
                     });
