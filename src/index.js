@@ -6,6 +6,7 @@ import { startDiscordBot } from "./discord.js";
 import { keepAlive } from './keep_alive.js';
 import { performAutopost } from './autopost.js';
 import { performRecapAutopost } from './recapAutopost.js';
+import { startWhatsAppBot } from './whatsapp.js';
 
 dotenv.config();
 
@@ -16,6 +17,9 @@ keepAlive();
 
 // 2. Jalankan Bot Discord & Tangkap Client-nya
 const client = await startDiscordBot();
+
+// Nyalain mesin Alexia WhatsApp!
+startWhatsAppBot();
 
 // ==========================================
 // ⏰ SCHEDULER / CRON JOBS (Waktu Asia/Jakarta)

@@ -10,6 +10,7 @@
   "dependencies": {
     "@discordjs/rest": "^2.3.0",
     "@keyv/sqlite": "^3.6.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "canvas": "^3.2.1",
     "discord-api-types": "^0.37.91",
     "discord.js": "^14.15.3",
@@ -19,6 +20,8 @@
     "keyv": "^4.5.4",
     "node-cron": "^3.0.3",
     "node-fetch": "^3.3.2",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0",
     "sharp": "^0.33.5",
     "telegraf": "^4.16.3",
     "youtubei.js": "^15.1.1"

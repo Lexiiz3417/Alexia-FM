@@ -12,6 +12,7 @@ import { getRandomComment } from './commentGenerator.js';
 import { postToTelegram } from "./telegram.js"; 
 import { logPlayHistory } from './history.js'; 
 import { getTrackInfo } from './coverFinder.js'; 
+import { sendWhatsAppPost } from './whatsapp.js'; // 🟢 IMPORT MESIN WA KITA!
 
 dotenv.config();
 
@@ -116,7 +117,6 @@ export async function performAutopost(client) {
             await updateBotPresence(client, finalTrack);
         }
 
-        // 👇 INI JUGA UDAH GUA FIX CARA MANGGIL FUNGSINYA 👇
         const songObj = {
             title: trackTitle,
             artist: trackArtist,
@@ -137,6 +137,7 @@ export async function performAutopost(client) {
         
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
+        // --- 🔵 POSTING KE FACEBOOK ---
         if (process.env.FACEBOOK_PAGE_ID) {
             try {
                 const postId = await postToFacebook(imageBuffer, caption);
@@ -147,12 +148,27 @@ export async function performAutopost(client) {
             } catch (e) { console.error("FB Post Error:", e.message); }
         }
 
+        // --- 🔵 POSTING KE TELEGRAM ---
         if (process.env.TELEGRAM_BOT_TOKEN) {
             try {
                 await postToTelegram(imageBuffer, caption, engagementComment);
             } catch (e) { console.error("Tele Post Error:", e.message); }
         }
 
+        // --- 🟢 POSTING KE WHATSAPP PRIBADI ---
+        try {
+            console.log("🟢 Mengirim draft ke WhatsApp CEO...");
+            const myWaNumber = "6285163133417@s.whatsapp.net"; 
+            
+            // Gabungin caption sama comment biar gampang di-forward
+            const waCaption = `${caption}\n\n💬 ${engagementComment}`;
+            
+            await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
+        } catch (waError) { 
+            console.error("❌ Gagal kirim ke WA:", waError.message); 
+        }
+
+        // --- 🟣 POSTING KE DISCORD ---
         console.log(`📣 Sending to Discord...`);
         for await (const [key, value] of db.iterator()) {
             if (key && key.startsWith('sub:')) {
