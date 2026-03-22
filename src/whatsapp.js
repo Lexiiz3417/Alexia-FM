@@ -13,19 +13,20 @@ export async function startWhatsAppBot() {
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }),
-        // 🌟 WAJIB: Pake browser Chrome biar Pairing Code muncul
+        logger: pino({ level: 'silent' }), // Membungkam Baileys sepenuhnya
         browser: Browsers.ubuntu('Chrome'), 
+        // 🌟 OPTIMASI RAM: Abaikan riwayat chat lama saat login
+        syncFullHistory: false,
+        // 🌟 OPTIMASI RAM: Jangan simpan cache pesan masuk di memori
+        getMessage: async (key) => { return { conversation: '' } } 
     });
 
     waSocket = sock;
 
     // --- 🔑 LOGIKA PAIRING CODE ---
-    // Cek kalo belum login, kita minta kode
     if (!sock.authState.creds.registered) {
-        const phoneNumber = "6285163133417"; // Nomor lu (Tanpa + atau spasi)
+        const phoneNumber = "6285163133417"; 
         
-        // Kasih jeda 5 detik biar koneksi socket stabil dulu
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
