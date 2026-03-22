@@ -1,63 +1,58 @@
 // src/whatsapp.js
-
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import path from 'path';
-import qrcode from 'qrcode-terminal';
 
-// 🌟 INI PINTU KELUARNYA BIAR FILE LAIN BISA NGE-POST KE WA
 export let waSocket = null;
 
 export async function startWhatsAppBot() {
-    console.log("🟢 Menyiapkan mesin Alexia WhatsApp...");
-
     const authPath = path.resolve(process.cwd(), 'data', 'auth_wa');
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
-
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    
-    // Gak usah nge-print versi lagi biar terminal lu bersih
-    // console.log(`📡 Pake WA Web versi: ${version.join('.')} (Terbaru: ${isLatest})`);
+    const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }), // 🌟 Kembalikan ke silent biar terminal lu estetik lagi!
-        browser: ['Alexia WA', 'Chrome', '1.0.0']
+        logger: pino({ level: 'silent' }),
+        // 🌟 WAJIB: Pake browser Chrome biar Pairing Code muncul
+        browser: Browsers.ubuntu('Chrome'), 
     });
 
-    // 🌟 SIMPAN MESINNYA KE VARIABLE GLOBAL
     waSocket = sock;
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
+    // --- 🔑 LOGIKA PAIRING CODE ---
+    // Cek kalo belum login, kita minta kode
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = "6285163133417"; // Nomor lu (Tanpa + atau spasi)
         
-        if (qr) {
-            console.log('\n📱 CEPAT SCAN QR CODE INI PAKE WA LU CEO!\n');
-            qrcode.generate(qr, { small: true }); 
-        }
+        // Kasih jeda 5 detik biar koneksi socket stabil dulu
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log(`\n🔑 [WHATSAPP PAIRING CODE]: ${code.match(/.{1,4}/g).join('-')}\n`);
+                console.log(`👉 Buka WA di HP -> Linked Devices -> Link with phone number instead`);
+                console.log(`👉 Masukkan kode di atas ya CEO!\n`);
+            } catch (err) {
+                console.error("❌ Gagal generate pairing code:", err.message);
+            }
+        }, 5000);
+    }
 
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                setTimeout(() => { startWhatsAppBot(); }, 5000);
-            } else {
-                console.log('❌ WA Logout. Hapus folder data/auth_wa dan scan ulang.');
-            }
+            if (shouldReconnect) setTimeout(() => startWhatsAppBot(), 5000);
         } else if (connection === 'open') {
-            console.log('✅ BOOM! ALEXIA WA BERHASIL CONNECT KE NOMOR LU!');
+            console.log('✅ BOOM! ALEXIA WA BERHASIL CONNECT VIA PAIRING CODE!');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 }
 
-// 🌟 FUNGSI BUAT AUTOPOST KE WA (Bisa dipanggil dari autopost.js lu!)
 export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
-    if (!waSocket) {
-        console.log("⚠️ WA belum connect, skip posting WA.");
-        return;
-    }
+    if (!waSocket) return;
     try {
         if (imageBuffer) {
             await waSocket.sendMessage(targetJid, { image: imageBuffer, caption: text });

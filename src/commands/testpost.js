@@ -6,14 +6,13 @@ import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence, sendAutoPostEmbed } from '../discord.js'; 
-// 👇 FIX 1: Import Canvas 2K
 import { generateNowPlayingImage } from '../imageProcessor.js';
-// 👇 FIX 2: Import Otak Deezer
 import { getTrackInfo } from '../coverFinder.js'; 
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { getRandomComment } from '../commentGenerator.js'; 
 import { postToTelegram } from '../telegram.js'; 
-import { logPlayHistory } from '../history.js'; // CCTV Alexia Wrapped
+import { logPlayHistory } from '../history.js'; 
+import { sendWhatsAppPost } from '../whatsapp.js'; // 🟢 IMPORT MESIN WA
 
 const db = new Keyv('sqlite://data/db.sqlite');
 
@@ -34,12 +33,12 @@ export default {
                     { name: '🚀 All Platforms', value: 'all' },
                     { name: '📘 Facebook Only', value: 'facebook' },
                     { name: '✈️ Telegram Only', value: 'telegram' }, 
-                    { name: '👾 Discord Only', value: 'discord' }
+                    { name: '👾 Discord Only', value: 'discord' },
+                    { name: '🟢 WhatsApp Only', value: 'whatsapp' } // 🟢 OPSI BARU
                 )
         ),
 
     async execute(interaction) {
-        // 1. SECURITY CHECK
         if (interaction.user.id !== process.env.OWNER_ID) {
             return interaction.reply({ 
                 content: '⛔ **Access Denied.**\nThis command is restricted to the Bot Owner.', 
@@ -53,7 +52,7 @@ export default {
             await interaction.deferReply(); 
 
             const savedChannelId = await db.get(`sub:${interaction.guildId}`);
-            if (!savedChannelId && target !== 'telegram' && target !== 'facebook') {
+            if (!savedChannelId && target !== 'telegram' && target !== 'facebook' && target !== 'whatsapp') {
                 return interaction.editReply({ 
                     content: '❌ **Error:** No Discord channel set. Run `/setchannel` first.' 
                 });
@@ -69,7 +68,6 @@ export default {
             let trackArtist = odesliData.artist;
             let trackCover = odesliData.imageUrl;
 
-            // 🌟 THE MAGIC: Cuci datanya ke Deezer sebelum dipost!
             const hdInfo = await getTrackInfo(trackTitle, trackArtist);
             if (hdInfo) {
                 trackTitle = hdInfo.title || trackTitle;
@@ -84,20 +82,15 @@ export default {
             const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
             const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
-            // 2. GENERATE IMAGE (High Quality 2K)
             const songObj = {
                 title: trackTitle,
                 artist: trackArtist,
                 coverUrl: trackCover
             };
 
-            // 👇 FIX 3: Panggil Canvas yang baru
             const imageBuffer = await generateNowPlayingImage(songObj, `TEST DAY #${dayNumber}`);
-
             if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
-            // --- 3. PASANG CCTV (HISTORY LOG) ---
-            // Dicatat sebagai 'testpost' dengan URL Cover HD
             logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'testpost', trackCover);
 
             const caption = await generateCaption({ day: dayNumber, title: trackTitle, artist: trackArtist, link: odesliData.pageUrl });
@@ -107,6 +100,7 @@ export default {
             let fbStatus = "⚪ *Skipped*";
             let discordStatus = "⚪ *Skipped*";
             let teleStatus = "⚪ *Skipped*";
+            let waStatus = "⚪ *Skipped*"; // 🟢 STATUS AWAL WA
 
             // A. FACEBOOK
             if (target === 'all' || target === 'facebook') {
@@ -116,9 +110,7 @@ export default {
                         fbStatus = `✅ **Posted**`;
                         await commentOnPost(postId, engagementComment);
                     } else fbStatus = "❌ **Failed**";
-                } else {
-                    fbStatus = "⚠️ **No Config**";
-                }
+                } else fbStatus = "⚠️ **No Config**";
             }
 
             // B. TELEGRAM
@@ -126,19 +118,29 @@ export default {
                 if (process.env.TELEGRAM_BOT_TOKEN) {
                     const success = await postToTelegram(imageBuffer, caption, engagementComment);
                     teleStatus = success ? "✅ **Sent**" : "❌ **Failed**";
-                } else {
-                    teleStatus = "⚠️ **No Config**";
+                } else teleStatus = "⚠️ **No Config**";
+            }
+
+            // C. WHATSAPP (🟢 NEW TARGET)
+            if (target === 'all' || target === 'whatsapp') {
+                try {
+                    const myWaNumber = "6285163133417@s.whatsapp.net";
+                    const waCaption = `${caption}\n\n💬 ${engagementComment}`;
+                    await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
+                    waStatus = "✅ **Sent to CEO**";
+                } catch (e) {
+                    waStatus = `❌ **Error:** ${e.message}`;
                 }
             }
 
-            // C. DISCORD
+            // D. DISCORD
             if ((target === 'all' || target === 'discord') && savedChannelId) {
                 try {
                     await sendAutoPostEmbed({
                         client: interaction.client,
                         comment: engagementComment,
                         caption: caption,
-                        imageUrl: trackCover, // Pake gambar HD buat embed
+                        imageUrl: trackCover,
                         imageBuffer: imageBuffer,
                         channelId: savedChannelId 
                     });
@@ -150,7 +152,7 @@ export default {
 
             // --- 5. RENDER LAPORAN ESTETIK ---
             const reportEmbed = new EmbedBuilder()
-                .setColor('#2ecc71') // Hijau Emerald
+                .setColor('#2ecc71')
                 .setAuthor({ name: 'System Simulation', iconURL: interaction.client.user.displayAvatarURL() })
                 .setTitle(`🧪 Autopost Test Complete: Day #${dayNumber}`)
                 .setDescription(`Successfully simulated a post for **${trackTitle}** by **${trackArtist}**.`)
@@ -158,9 +160,10 @@ export default {
                     { name: '🌐 Platform Status', value: '\u200B' },
                     { name: '🔹 Discord', value: discordStatus, inline: true },
                     { name: '🔹 Facebook', value: fbStatus, inline: true },
-                    { name: '🔹 Telegram', value: teleStatus, inline: true }
+                    { name: '🔹 Telegram', value: teleStatus, inline: true },
+                    { name: '🟢 WhatsApp', value: waStatus, inline: true } // 🟢 FIELD BARU DI EMBED
                 )
-                .setThumbnail(trackCover) // Thumbnail di report juga jadi HD!
+                .setThumbnail(trackCover)
                 .setFooter({ text: `Admin: ${interaction.user.username} • History Logged`, iconURL: interaction.user.displayAvatarURL() })
                 .setTimestamp();
             
