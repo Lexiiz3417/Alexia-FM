@@ -51,10 +51,17 @@ async function prepareImages(coverUrl) {
     }
 }
 
-// --- MESIN UTAMA: CANVAS 2K ---
+// --- MESIN UTAMA: CANVAS 2K DYNAMIC HEIGHT ---
 export async function generateRecapImage(type, songs) {
     const width = 1600; // RESOLUSI NAIK 2X LIPAT!
-    const height = 2000;
+    
+    // 🌟 PERBAIKAN 1: DYNAMIC HEIGHT!
+    const listStartTop = 1360; 
+    const itemSpacing = 124;
+    // Ngitung butuh tinggi berapa berdasarkan jumlah lagu
+    const calculatedHeight = listStartTop + ((songs.length - 1) * itemSpacing) + 200; 
+    const height = Math.max(2000, calculatedHeight); // Kalo lagu dikit tetep 2000, kalo banyak dia melar!
+
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -142,10 +149,9 @@ export async function generateRecapImage(type, songs) {
     }
 
     // --- 5. LIST RANKING ---
-    const listStartTop = 1360; 
     songs.slice(1).forEach((song, index) => {
         const rank = index + 2;
-        const y = listStartTop + (index * 124); // Spacing x2
+        const y = listStartTop + (index * itemSpacing); // Spacing x2
 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
         if (ctx.roundRect) { ctx.roundRect(160, y - 84, width - 320, 104, 20); } 
@@ -159,9 +165,10 @@ export async function generateRecapImage(type, songs) {
 
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 36px ${mainFont}`;
-        // Ambil clean data buat list sisanya kalo perlu, tp sementara dari DB lgsg jg oke
         const info = `${song.title || 'Unknown'} - ${song.artist || 'Unknown'}`;
-        ctx.fillText(info.length > 50 ? info.substring(0, 47) + '...' : info, 320, y - 12);
+        
+        // 🌟 PERBAIKAN 2: Potong max 38 karakter biar gak nusuk angka PTS!
+        ctx.fillText(info.length > 40 ? info.substring(0, 38) + '...' : info, 320, y - 12);
 
         ctx.textAlign = 'right';
         ctx.fillStyle = accentColor;
@@ -173,7 +180,7 @@ export async function generateRecapImage(type, songs) {
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = `italic 32px ${mainFont}`;
-    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 70);
+    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 70); // Y-axis dinamis ngikutin tinggi canvas
 
     return canvas.toBuffer();
 }
