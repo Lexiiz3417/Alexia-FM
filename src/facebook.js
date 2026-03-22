@@ -1,12 +1,45 @@
 // src/facebook.js
 
 import fetch from 'node-fetch';
+import FormData from 'form-data';
 
 const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
 const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
-const API_VERSION = process.env.FACEBOOK_API_VERSION || 'v25.0';
+const API_VERSION = process.env.FACEBOOK_API_VERSION || 'v18.0';
+// 👇 Tambahin variable buat nangkep API Key ImgBB
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 🌟 FUNGSI RAHASIA: Maling Hosting ImgBB
+async function uploadToImgBB(imageBuffer) {
+    if (!IMGBB_API_KEY) {
+        console.warn("⚠️ IMGBB_API_KEY kosong. Fallback ImgBB dibatalkan.");
+        return null;
+    }
+    try {
+        console.log("⏳ Uploading to ImgBB as fallback...");
+        // ImgBB minta format Base64
+        const base64Image = imageBuffer.toString('base64');
+        const body = new URLSearchParams();
+        body.append('image', base64Image);
+
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: body
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            console.log("✅ ImgBB Upload Success:", data.data.url);
+            return data.data.url;
+        }
+        return null;
+    } catch (e) {
+        console.error("❌ ImgBB Upload Error:", e.message);
+        return null;
+    }
+}
 
 export async function postToFacebook(imageSource, caption) {
     if (!PAGE_ID || !ACCESS_TOKEN) return null;
@@ -14,46 +47,64 @@ export async function postToFacebook(imageSource, caption) {
     const url = `https://graph.facebook.com/${API_VERSION}/${PAGE_ID}/photos`;
     let retries = 3;
     let backoff = 2000;
+    
+    // Status penanda fallback
+    let isFallbackMode = false;
+    let fallbackImageUrl = null;
 
     for (let i = 0; i < retries; i++) {
         try {
-            // 🌟 JURUS BYPASS: Pake Blob bukan Buffer!
-            const formData = new FormData();
-            formData.append('access_token', ACCESS_TOKEN);
-            formData.append('message', caption);
-            formData.append('published', 'true');
+            const form = new FormData();
+            form.append('access_token', ACCESS_TOKEN);
+            form.append('message', caption);
+            form.append('published', 'true');
 
-            // Ubah Buffer jadi Blob biar Facebook gak nolak
             if (Buffer.isBuffer(imageSource)) {
-                const blob = new Blob([imageSource], { type: 'image/png' });
-                formData.append('source', blob, 'alexia-card.png');
+                // Kalo udah masuk mode fallback, kirim URL ImgBB-nya ke Facebook
+                if (isFallbackMode && fallbackImageUrl) {
+                    form.append('url', fallbackImageUrl);
+                } else {
+                    // Percobaan pertama: Direct Upload
+                    form.append('source', imageSource, { 
+                        filename: 'alexiacard.png', 
+                        contentType: 'image/png',
+                        knownLength: imageSource.length 
+                    });
+                }
             } else {
-                formData.append('url', imageSource);
+                form.append('url', imageSource);
             }
 
             const response = await fetch(url, { 
                 method: 'POST', 
-                body: formData
-                // getHeaders() dihapus karena node-fetch bawaan Node v22 udah support native Blob/FormData
+                body: form,
+                headers: form.getHeaders() 
             });
             
-            if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-
             const data = await response.json();
 
-            if (data.error) {
-                console.error("❌ FB API Rejected:", data.error);
-                return null;
+            if (!response.ok) {
+                throw new Error(`FB API Rejected: ${data.error?.message || response.statusText}`);
             }
 
             if (data.id) {
-                console.log(`✅ Successfully posted to FB! ID: ${data.id}`);
+                console.log(`✅ Successfully posted to FB! ID: ${data.id} ${isFallbackMode ? '(via ImgBB)' : '(Direct)'}`);
                 return data.id; 
             }
             return null;
 
         } catch (error) {
             console.warn(`⚠️ [FB Retry] Attempt ${i + 1} failed: ${error.message}`);
+            
+            // 🔥 OTOMATIS NYALA KALO FB NGASIH ERROR 400
+            if (!isFallbackMode && Buffer.isBuffer(imageSource)) {
+                console.log("🔄 Mengaktifkan Mode Fallback ImgBB...");
+                fallbackImageUrl = await uploadToImgBB(imageSource);
+                if (fallbackImageUrl) {
+                    isFallbackMode = true; // Ubah status biar percobaan berikutnya pake link
+                }
+            }
+
             if (i === retries - 1) return null;
             await sleep(backoff);
             backoff *= 2; 
