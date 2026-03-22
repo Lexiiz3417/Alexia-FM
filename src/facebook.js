@@ -1,7 +1,6 @@
 // src/facebook.js
 
 import fetch from 'node-fetch';
-import FormData from 'form-data';
 
 const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
 const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
@@ -18,21 +17,24 @@ export async function postToFacebook(imageSource, caption) {
 
     for (let i = 0; i < retries; i++) {
         try {
+            // 🌟 JURUS BYPASS: Pake Blob bukan Buffer!
             const formData = new FormData();
             formData.append('access_token', ACCESS_TOKEN);
             formData.append('message', caption);
             formData.append('published', 'true');
 
+            // Ubah Buffer jadi Blob biar Facebook gak nolak
             if (Buffer.isBuffer(imageSource)) {
-                formData.append('source', imageSource, { filename: 'image.png', contentType: 'image/png' });
+                const blob = new Blob([imageSource], { type: 'image/png' });
+                formData.append('source', blob, 'alexia-card.png');
             } else {
                 formData.append('url', imageSource);
             }
 
             const response = await fetch(url, { 
                 method: 'POST', 
-                body: formData,
-                headers: formData.getHeaders() // <--- TANPA INI, NODE-FETCH BIKIN 400 BAD REQUEST
+                body: formData
+                // getHeaders() dihapus karena node-fetch bawaan Node v22 udah support native Blob/FormData
             });
             
             if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
