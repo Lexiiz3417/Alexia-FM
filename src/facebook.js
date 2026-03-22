@@ -29,7 +29,11 @@ export async function postToFacebook(imageSource, caption) {
                 formData.append('url', imageSource);
             }
 
-            const response = await fetch(url, { method: 'POST', body: formData });
+            const response = await fetch(url, { 
+                method: 'POST', 
+                body: formData,
+                headers: formData.getHeaders() // <--- TANPA INI, NODE-FETCH BIKIN 400 BAD REQUEST
+            });
             
             if (!response.ok) throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
 
