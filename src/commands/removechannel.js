@@ -2,7 +2,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import Keyv from 'keyv';
 
-const db = new Keyv('sqlite://data/db.sqlite');
+const db = new Keyv();
 
 export default {
   data: new SlashCommandBuilder()

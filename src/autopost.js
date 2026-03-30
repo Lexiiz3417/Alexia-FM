@@ -16,7 +16,7 @@ import { sendWhatsAppPost } from './whatsapp.js'; // 🟢 IMPORT MESIN WA KITA!
 
 dotenv.config();
 
-const db = new Keyv('sqlite://data/db.sqlite');
+const db = new Keyv();
 const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
 const HISTORY_LIMIT = 50; 
 

@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Koneksi ke Database yang sama
-const db = new Keyv('sqlite://data/db.sqlite');
+const db = new Keyv();
 
 /**
  * Cek apakah user boleh menggunakan command ini.

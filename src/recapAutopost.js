@@ -12,7 +12,7 @@ import { postToFacebook, commentOnPost } from "./facebook.js";
 import { postToTelegram } from "./telegram.js";
 
 dotenv.config();
-const db = new Keyv('sqlite://data/db.sqlite');
+const db = new Keyv();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -14,7 +14,7 @@ import { postToTelegram } from '../telegram.js';
 import { logPlayHistory } from '../history.js'; 
 import { sendWhatsAppPost } from '../whatsapp.js'; // 🟢 IMPORT MESIN WA
 
-const db = new Keyv('sqlite://data/db.sqlite');
+const db = new Keyv();
 
 async function getRandomTrack() {
     const playlist = await getPlaylistTracks();
