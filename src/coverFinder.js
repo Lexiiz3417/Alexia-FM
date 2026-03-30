@@ -1,7 +1,7 @@
 // src/coverFinder.js
 import fetch from 'node-fetch';
 
-function cleanMetadata(rawTitle, rawArtist) {
+export function cleanMetadata(rawTitle, rawArtist) {
     let title = rawTitle || "";
     let artist = rawArtist || "";
 

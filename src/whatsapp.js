@@ -1,29 +1,29 @@
 // src/whatsapp.js
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import path from 'path';
+import { usePostgresAuthState } from './waAuthState.js'; // ☁️ Import Cloud Auth Adaptor
 
 export let waSocket = null;
 
 export async function startWhatsAppBot() {
-    const authPath = path.resolve(process.cwd(), 'data', 'auth_wa');
-    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+    // --- ☁️ USE CLOUD AUTH STATE ---
+    const { state, saveCreds } = await usePostgresAuthState();
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }), // Membungkam Baileys sepenuhnya
+        logger: pino({ level: 'silent' }), // Silence Baileys logs completely
         browser: Browsers.ubuntu('Chrome'), 
-        // 🌟 OPTIMASI RAM: Abaikan riwayat chat lama saat login
+        // 🌟 RAM OPTIMIZATION: Ignore old chat history on login
         syncFullHistory: false,
-        // 🌟 OPTIMASI RAM: Jangan simpan cache pesan masuk di memori
+        // 🌟 RAM OPTIMIZATION: Do not cache incoming messages in memory
         getMessage: async (key) => { return { conversation: '' } } 
     });
 
     waSocket = sock;
 
-    // --- 🔑 LOGIKA PAIRING CODE ---
+    // --- 🔑 PAIRING CODE LOGIC ---
     if (!sock.authState.creds.registered) {
         const phoneNumber = "6285163133417"; 
         
@@ -31,10 +31,10 @@ export async function startWhatsAppBot() {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
                 console.log(`\n🔑 [WHATSAPP PAIRING CODE]: ${code.match(/.{1,4}/g).join('-')}\n`);
-                console.log(`👉 Buka WA di HP -> Linked Devices -> Link with phone number instead`);
-                console.log(`👉 Masukkan kode di atas ya CEO!\n`);
+                console.log(`👉 Open WA on Phone -> Linked Devices -> Link with phone number instead`);
+                console.log(`👉 Enter the code above, CEO!\n`);
             } catch (err) {
-                console.error("❌ Gagal generate pairing code:", err.message);
+                console.error("❌ Failed to generate pairing code:", err.message);
             }
         }, 5000);
     }
@@ -45,7 +45,7 @@ export async function startWhatsAppBot() {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) setTimeout(() => startWhatsAppBot(), 5000);
         } else if (connection === 'open') {
-            console.log('✅ BOOM! ALEXIA WA BERHASIL CONNECT VIA PAIRING CODE!');
+            console.log('✅ BOOM! ALEXIA WA SUCCESSFULLY CONNECTED VIA CLOUD AUTH!');
         }
     });
 
@@ -60,8 +60,8 @@ export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
         } else {
             await waSocket.sendMessage(targetJid, { text: text });
         }
-        console.log("✅ Berhasil nge-post ke WhatsApp!");
+        console.log("✅ Successfully posted to WhatsApp!");
     } catch (error) {
-        console.error("❌ Gagal nge-post ke WA:", error);
+        console.error("❌ Failed to post to WA:", error);
     }
 }

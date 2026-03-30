@@ -5,8 +5,8 @@ import fetch from 'node-fetch';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Import mesin pencari cover HD lu!
-import { getTrackInfo } from './coverFinder.js';
+// 🌟 Import mesin pencari cover HD dan Pembersih Judul lu!
+import { getTrackInfo, cleanMetadata } from './coverFinder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,7 +72,7 @@ export async function generateRecapImage(type, songs) {
     let topSong = songs[0] || { title: "Unknown", artist: "Unknown", play_count: 0 };
     let finalImages = null;
     
-    // --- 1. INTEGRASI COVER FINDER (PHASE 1) ---
+    // --- 1. INTEGRASI COVER FINDER & FALLBACK CLEANER ---
     let displayTitle = topSong.title;
     let displayArtist = topSong.artist;
     let coverUrl = null;
@@ -83,6 +83,11 @@ export async function generateRecapImage(type, songs) {
             displayTitle = hdInfo.title; // Pake nama asli dari Deezer
             displayArtist = hdInfo.artist; // Bye "Release" / "Topic"!
             coverUrl = hdInfo.coverUrl;
+        } else {
+            // 🌟 FALLBACK DARURAT: Deezer Gagal, Bersihin Manual!
+            const cleaned = cleanMetadata(topSong.title, topSong.artist);
+            displayTitle = cleaned.cleanTitle || topSong.title;
+            displayArtist = cleaned.cleanArtist || topSong.artist;
         }
         
         // Coba proses gambarnya
@@ -153,6 +158,11 @@ export async function generateRecapImage(type, songs) {
         const rank = index + 2;
         const y = listStartTop + (index * itemSpacing); // Spacing x2
 
+        // 🌟 EKSTRA: Bersihin juga judul di list biar rapi!
+        const cleanedList = cleanMetadata(song.title, song.artist);
+        const listTitle = cleanedList.cleanTitle || song.title || 'Unknown';
+        const listArtist = cleanedList.cleanArtist || song.artist || 'Unknown';
+
         // Gambar Background Box List
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
         if (ctx.roundRect) { 
@@ -182,7 +192,8 @@ export async function generateRecapImage(type, songs) {
         ctx.fillStyle = '#ffffff';
         ctx.font = `bold 36px ${mainFont}`;
         
-        let info = `${song.title || 'Unknown'} - ${song.artist || 'Unknown'}`;
+        // Pake judul yang udah dibersihin
+        let info = `${listTitle} - ${listArtist}`;
         
         // Hitung batas aman lebar piksel buat judul lagu
         // 320 = titik X awal judul, (width - 220) = titik X akhir (tempat PTS)

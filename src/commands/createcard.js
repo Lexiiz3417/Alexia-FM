@@ -3,7 +3,7 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getOdesliData } from '../songlink.js';
 import { generateNowPlayingImage } from '../imageProcessor.js';
-import { getTrackInfo } from '../coverFinder.js'; 
+import { getTrackInfo, cleanMetadata, forceHDYouTubeCover } from '../coverFinder.js'; 
 import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; 
 import { logPlayHistory } from '../history.js'; // CCTV Alexia Wrapped
 
@@ -82,6 +82,12 @@ export default {
                             finalTitle = hdInfo.title || finalTitle;
                             finalArtist = hdInfo.artist || finalArtist;
                             if (hdInfo.coverUrl) finalImageUrl = hdInfo.coverUrl;
+                        } else {
+                            // 🌟 FALLBACK DARURAT: Deezer Gagal, Bersihin Manual & Suntik HD!
+                            const cleaned = cleanMetadata(finalTitle, finalArtist);
+                            finalTitle = cleaned.cleanTitle || finalTitle;
+                            finalArtist = cleaned.cleanArtist || finalArtist;
+                            finalImageUrl = forceHDYouTubeCover(finalImageUrl); 
                         }
                     }
                 } else if (!customTitle) {
