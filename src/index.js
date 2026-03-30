@@ -2,6 +2,7 @@
 
 import dotenv from "dotenv";
 import cron from "node-cron";
+import fetch from "node-fetch"; // 🌟 Import fetch buat ping
 import { startDiscordBot } from "./discord.js";
 import { keepAlive } from './keep_alive.js';
 import { performAutopost } from './autopost.js';
@@ -12,13 +13,28 @@ dotenv.config();
 
 console.log("🔥 Alexia FM Bot Service Starting...");
 
-// 1. Jalankan Server Keep-Alive (Supaya bot gak mati di Railway)
+// 1. Jalankan Server Keep-Alive (Internal Express Server)
 keepAlive();
 
-// 2. Jalankan Bot Discord & Tangkap Client-nya
+// 🌟 2. DOUBLE PROTECTION: SELF-PINGING (Anti-Sleep Koyeb/Railway)
+const APP_URL = process.env.APP_URL; 
+if (APP_URL) {
+    setInterval(async () => {
+        try {
+            const res = await fetch(APP_URL);
+            console.log(`📡 [Keep-Alive] Self-pinging ${APP_URL}... Status: ${res.status}`);
+        } catch (e) {
+            console.error("❌ [Keep-Alive] Internal ping failed:", e.message);
+        }
+    }, 5 * 60 * 1000); // Ping tiap 5 menit
+} else {
+    console.warn("⚠️ [Keep-Alive] APP_URL not set. Internal self-ping skipped.");
+}
+
+// 3. Jalankan Bot Discord & Tangkap Client-nya
 const client = await startDiscordBot();
 
-// Nyalain mesin Alexia WhatsApp!
+// 4. Nyalain mesin Alexia WhatsApp!
 startWhatsAppBot();
 
 // ==========================================
@@ -45,7 +61,6 @@ cron.schedule('0 0 * * 1', async () => {
 
 
 // 📌 3. MONTHLY RECAP (Tiap Tanggal 1, Jam 00:00 WIB)
-// Ini sama dengan detik pertama di akhir bulan
 cron.schedule('0 0 1 * *', async () => {
     console.log("🔔 Monthly Recap triggered!");
     await performRecapAutopost(client, 'monthly');
