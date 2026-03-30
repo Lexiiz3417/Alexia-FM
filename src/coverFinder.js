@@ -24,7 +24,7 @@ function cleanMetadata(rawTitle, rawArtist) {
     return { cleanTitle: title, cleanArtist: artist };
 }
 
-// 🌟 SUPER VERIFIER: Cek Judul DAN Artis!
+// 🌟 SUPER VERIFIER: Check Title AND Artist Match!
 function verifyMatch(inputTitle, inputArtist, resultTitle, resultArtist) {
     if (!inputTitle || !resultTitle) return false;
     
@@ -32,8 +32,8 @@ function verifyMatch(inputTitle, inputArtist, resultTitle, resultArtist) {
     const t2 = resultTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
     const titleMatch = t1.includes(t2) || t2.includes(t1);
 
-    // Kalo artisnya kosong (karena dihapus filter), kita cuma lolosin kalo judulnya panjang (spesifik)
-    // Kalo judul cuma 1-2 kata kayak "The Call" tanpa artis, itu 100% bakal cocoklogi.
+    // If the artist is empty (removed by filter), we only pass it if the title is long/specific
+    // If the title is just 1-2 words like "The Call" without an artist, it's 100% prone to mismatch.
     if (!inputArtist) {
         return titleMatch && inputTitle.length > 10; 
     }
@@ -48,23 +48,23 @@ function verifyMatch(inputTitle, inputArtist, resultTitle, resultArtist) {
 export async function getTrackInfo(rawTitle, rawArtist) {
     const { cleanTitle, cleanArtist } = cleanMetadata(rawTitle, rawArtist);
 
-    // 🛡️ PENANGKAL COCOKLOGI "THE CALL"
-    // Kalo setelah dibersihin artisnya ilang dan judulnya pasaran (<= 10 huruf), mending nyerah!
+    // 🛡️ MISMATCH PREVENTION ("THE CALL" SYNDROME)
+    // If the artist is empty after cleaning and the title is too generic (<= 10 chars), give up!
     if (!cleanArtist && cleanTitle.length <= 10) {
-        console.log(`⚠️ Bahaya Cocoklogi! Judul "${cleanTitle}" terlalu pendek dan tanpa artis. Skip API.`);
+        console.log(`⚠️ Mismatch Risk! Title "${cleanTitle}" is too short and lacks an artist. Skipping API.`);
         return null;
     }
 
     const searchQuery = encodeURIComponent(`${cleanTitle} ${cleanArtist}`.trim());
 
-    // --- LAPIS 1: DEEZER ---
+    // --- LAYER 1: DEEZER ---
     try {
         const dzUrl = `https://api.deezer.com/search?q=${searchQuery}&limit=5`; 
         const res = await fetch(dzUrl);
         const data = await res.json();
 
         if (data.data && data.data.length > 0) {
-            // Cek bener-bener yang match Judul & Artis
+            // Strictly check for Title & Artist match
             const validTrack = data.data.find(t => verifyMatch(cleanTitle, cleanArtist, t.title, t.artist.name));
             
             if (validTrack) {
@@ -74,14 +74,14 @@ export async function getTrackInfo(rawTitle, rawArtist) {
                     coverUrl: validTrack.album.cover_xl 
                 };
             } else {
-                console.log(`⚠️ Deezer hasil ngawur. Input: "${cleanTitle} - ${cleanArtist}". Di-skip!`);
+                console.log(`⚠️ Deezer mismatch. Input: "${cleanTitle} - ${cleanArtist}". Skipped!`);
             }
         }
     } catch (e) {
         console.error("⚠️ Deezer API Error:", e.message);
     }
 
-    // --- LAPIS 2: iTUNES ---
+    // --- LAYER 2: iTUNES ---
     try {
         const itunesUrl = `https://itunes.apple.com/search?term=${searchQuery}&entity=song&limit=5`;
         const res = await fetch(itunesUrl);
@@ -102,4 +102,20 @@ export async function getTrackInfo(rawTitle, rawArtist) {
     }
 
     return null; 
+}
+
+// 💉 OBAT HD UNTUK YOUTUBE FALLBACK (Force High Definition)
+export function forceHDYouTubeCover(coverUrl) {
+    if (!coverUrl) return coverUrl;
+
+    // Khas YouTube Music (googleusercontent) -> Paksa parameter w1000-h1000
+    if (coverUrl.includes('googleusercontent.com') && coverUrl.includes('=')) {
+        return coverUrl.split('=')[0] + '=w1000-h1000-l90-rj';
+    } 
+    // Khas YouTube Biasa (i.ytimg) -> Paksa naik kasta ke maxresdefault
+    else if (coverUrl.includes('i.ytimg.com')) {
+        return coverUrl.replace(/hqdefault\.jpg|mqdefault\.jpg|sddefault\.jpg/g, 'maxresdefault.jpg');
+    }
+    
+    return coverUrl;
 }
