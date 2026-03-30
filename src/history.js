@@ -5,16 +5,12 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Establish connection to Supabase using the connection string from .env
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false // Required for connecting to Supabase cloud servers
-    }
+    ssl: { rejectUnauthorized: false }
 });
 
-// Automatically create the history table if it doesn't exist upon startup
-// Matches the exact schema from the old SQLite version
+// 🌟 UPGRADE TABEL: Tambahin kolom 'cover_url'
 pool.query(`
     CREATE TABLE IF NOT EXISTS play_history (
         id SERIAL PRIMARY KEY,
@@ -22,49 +18,46 @@ pool.query(`
         artist TEXT NOT NULL,
         user_id TEXT NOT NULL,
         source TEXT NOT NULL,
+        cover_url TEXT, 
         played_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 `).then(() => {
-    console.log("✅ [Supabase] Database connected & Table ready!");
+    console.log("✅ [Supabase] Database connected & Table ready with Cover Support!");
 }).catch(err => {
     console.error("❌ [Supabase] Failed to initialize table:", err);
 });
 
 /**
- * Log the currently playing track into the cloud database
- * @param {string} title - The title of the track
- * @param {string} artist - The artist of the track
- * @param {string} userId - The ID of the user who requested the track
- * @param {string} source - The source platform of the track (e.g., youtube, spotify)
+ * Log the currently playing track with its original cover
  */
-export async function logPlayHistory(title, artist, userId, source) {
+export async function logPlayHistory(title, artist, userId, source, coverUrl) {
     const safeTitle = title ? title.trim() : 'Unknown Title';
     const safeArtist = artist ? artist.trim() : 'Unknown Artist';
     const safeUserId = userId ? userId : 'SYSTEM';
     const safeSource = source ? source : 'unknown';
+    const safeCover = coverUrl ? coverUrl : null; // 👈 Nyawa cadangan disimpan di sini
 
-    const query = `INSERT INTO play_history (title, artist, user_id, source) VALUES ($1, $2, $3, $4)`;
+    const query = `INSERT INTO play_history (title, artist, user_id, source, cover_url) VALUES ($1, $2, $3, $4, $5)`;
     
     try {
-        await pool.query(query, [safeTitle, safeArtist, safeUserId, safeSource]);
-        // Uncomment to see logs in console every time a song is recorded
-        // console.log(`☁️ [Supabase] Logged: ${safeTitle} - ${safeArtist}`);
+        await pool.query(query, [safeTitle, safeArtist, safeUserId, safeSource, safeCover]);
     } catch (error) {
         console.error("❌ [Supabase] Failed to log track to database:", error);
     }
 }
 
 /**
- * Retrieve the most played songs for a specific timeframe (Weekly/Monthly/Yearly)
- * @param {number} days - Number of days to look back
- * @param {number} limit - Maximum number of tracks to return
- * @returns {Promise<Array>} Array of song objects with play_count
+ * Retrieve the most played songs + cover_url terbaru
  */
 export async function getTopSongs(days, limit) {
     try {
-        // Casting COUNT(*) to INTEGER is crucial for Canvas rendering logic
+        // Kita ambil MAX(cover_url) biar dapet URL gambar terakhir yang tercatat
         const query = `
-            SELECT title, artist, CAST(COUNT(*) AS INTEGER) as play_count 
+            SELECT 
+                title, 
+                artist, 
+                MAX(cover_url) as cover_url, 
+                CAST(COUNT(*) AS INTEGER) as play_count 
             FROM play_history 
             WHERE played_at >= NOW() - $1::INTERVAL 
             GROUP BY title, artist 
@@ -75,7 +68,7 @@ export async function getTopSongs(days, limit) {
         const result = await pool.query(query, [`${days} days`, limit]);
         return result.rows;
     } catch (error) {
-        console.error(`❌ [Supabase] Failed to fetch top songs for the last ${days} days:`, error);
+        console.error(`❌ [Supabase] Failed to fetch top songs:`, error);
         return [];
     }
 }

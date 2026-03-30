@@ -115,7 +115,7 @@ export async function generateRecapImage(type, songs) {
             ctx.fillRect(x, y, coverSize, coverSize);
             ctx.fillStyle = accentColor;
             ctx.font = `bold 120px ${mainFont}`;
-            ctx.fillText('ᶻ 𝗓 𐰁 .ᐟ', width / 2, y + 360);
+            ctx.fillText('ᶻ 𝗓 Z .ᐟ', width / 2, y + 360);
         }
 
         ctx.fillStyle = '#ffffff';
