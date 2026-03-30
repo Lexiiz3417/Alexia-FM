@@ -5,6 +5,9 @@ import fetch from 'node-fetch';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// 🌟 IMPORT VAKSIN DARI COVER FINDER
+import { cleanMetadata, forceHDYouTubeCover } from './coverFinder.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -48,6 +51,12 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 2) {
 }
 
 export async function generateNowPlayingImage(song, topTextParam) {
+    // 🌟 BEA CUKAI CANVAS: BERSIIHIN SEMUANYA SEBELUM DIGAMBAR!
+    const cleaned = cleanMetadata(song.title, song.artist);
+    const finalTitle = cleaned.cleanTitle || song.title || "Unknown Title";
+    const finalArtist = cleaned.cleanArtist || song.artist || "Unknown Artist";
+    const finalCoverUrl = forceHDYouTubeCover(song.coverUrl); // Suntik HD Paksa!
+
     // UKURAN 2K
     const width = 1600; 
     const height = 900; 
@@ -60,7 +69,8 @@ export async function generateNowPlayingImage(song, topTextParam) {
     let bgImg, fgImg;
 
     try {
-        const res = await fetch(song.coverUrl);
+        // Ambil gambar yang udah pasti HD
+        const res = await fetch(finalCoverUrl);
         const buffer = Buffer.from(await res.arrayBuffer());
 
         const bgBuf = await sharp(buffer).resize(1600, 900, { fit: 'cover' }).blur(40).modulate({ brightness: 0.5 }).toBuffer();
@@ -69,7 +79,7 @@ export async function generateNowPlayingImage(song, topTextParam) {
         bgImg = await loadImage(bgBuf);
         fgImg = await loadImage(fgBuf);
     } catch (e) {
-        console.error("⚠️ Sharp error di Autopost:", e.message);
+        console.error("⚠️ Sharp error di imageProcessor:", e.message);
     }
 
     // 1. Background
@@ -113,15 +123,15 @@ export async function generateNowPlayingImage(song, topTextParam) {
     ctx.font = `bold 36px ${mainFont}`;
     ctx.fillText(displayTopText, textX, 360);
 
-    // Gambar Title (Bisa 2 Baris, Posisi Dinamis)
+    // Gambar Title PAKE YANG UDAH BERSIH (Bisa 2 Baris, Posisi Dinamis)
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold 72px ${mainFont}`;
-    const nextY = wrapText(ctx, song.title || "Unknown Title", textX, 460, maxTextWidth, 80, 2);
+    const nextY = wrapText(ctx, finalTitle, textX, 460, maxTextWidth, 80, 2);
 
-    // Gambar Artist (1 Baris) di bawah title yang posisinya dinamis
+    // Gambar Artist PAKE YANG UDAH BERSIH (1 Baris) di bawah title yang posisinya dinamis
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.font = `bold 48px ${mainFont}`;
-    wrapText(ctx, song.artist || "Unknown Artist", textX, nextY + 70, maxTextWidth, 60, 1);
+    wrapText(ctx, finalArtist, textX, nextY + 70, maxTextWidth, 60, 1);
 
     // Watermark
     ctx.textAlign = 'right';
@@ -131,4 +141,3 @@ export async function generateNowPlayingImage(song, topTextParam) {
 
     return canvas.toBuffer();
 }
-

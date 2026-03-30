@@ -7,12 +7,12 @@ import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence, sendAutoPostEmbed } from '../discord.js'; 
 import { generateNowPlayingImage } from '../imageProcessor.js';
-import { getTrackInfo } from '../coverFinder.js'; 
+import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; // 🌟 Import cleanMetadata
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { getRandomComment } from '../commentGenerator.js'; 
 import { postToTelegram } from '../telegram.js'; 
 import { logPlayHistory } from '../history.js'; 
-import { sendWhatsAppPost } from '../whatsapp.js'; // 🟢 IMPORT MESIN WA
+import { sendWhatsAppPost } from '../whatsapp.js'; 
 
 const db = new Keyv();
 
@@ -34,7 +34,7 @@ export default {
                     { name: '📘 Facebook Only', value: 'facebook' },
                     { name: '✈️ Telegram Only', value: 'telegram' }, 
                     { name: '👾 Discord Only', value: 'discord' },
-                    { name: '🟢 WhatsApp Only', value: 'whatsapp' } // 🟢 OPSI BARU
+                    { name: '🟢 WhatsApp Only', value: 'whatsapp' } 
                 )
         ),
 
@@ -52,7 +52,7 @@ export default {
             await interaction.deferReply(); 
 
             const savedChannelId = await db.get(`sub:${interaction.guildId}`);
-            if (!savedChannelId && target !== 'telegram' && target !== 'facebook' && target !== 'whatsapp') {
+            if (!savedChannelId && !['telegram', 'facebook', 'whatsapp'].includes(target)) {
                 return interaction.editReply({ 
                     content: '❌ **Error:** No Discord channel set. Run `/setchannel` first.' 
                 });
@@ -68,11 +68,17 @@ export default {
             let trackArtist = odesliData.artist;
             let trackCover = odesliData.imageUrl;
 
+            // 1. LAYER 1: Cari di Deezer (HD & Best Metadata)
             const hdInfo = await getTrackInfo(trackTitle, trackArtist);
             if (hdInfo) {
                 trackTitle = hdInfo.title || trackTitle;
                 trackArtist = hdInfo.artist || trackArtist;
                 if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
+            } else {
+                // 🌟 LAYER 2: Deezer Gagal? Cuci Judul Manual (Bilingual/Kanji Cleaner)
+                const cleaned = cleanMetadata(trackTitle, trackArtist);
+                trackTitle = cleaned.cleanTitle || trackTitle;
+                trackArtist = cleaned.cleanArtist || trackArtist;
             }
 
             const finalTrack = { name: trackTitle, artist: trackArtist };
@@ -88,19 +94,20 @@ export default {
                 coverUrl: trackCover
             };
 
+            // 2. GENERATE IMAGE (ImageProcessor juga sudah punya Bea Cukai internal)
             const imageBuffer = await generateNowPlayingImage(songObj, `TEST DAY #${dayNumber}`);
             if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
             logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'testpost', trackCover);
 
+            // 3. GENERATE CAPTION (Pake data yang sudah bersih!)
             const caption = await generateCaption({ day: dayNumber, title: trackTitle, artist: trackArtist, link: odesliData.pageUrl });
             const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-            // --- 4. EKSEKUSI PLATFORM ---
             let fbStatus = "⚪ *Skipped*";
             let discordStatus = "⚪ *Skipped*";
             let teleStatus = "⚪ *Skipped*";
-            let waStatus = "⚪ *Skipped*"; // 🟢 STATUS AWAL WA
+            let waStatus = "⚪ *Skipped*";
 
             // A. FACEBOOK
             if (target === 'all' || target === 'facebook') {
@@ -121,7 +128,7 @@ export default {
                 } else teleStatus = "⚠️ **No Config**";
             }
 
-            // C. WHATSAPP (🟢 NEW TARGET)
+            // C. WHATSAPP
             if (target === 'all' || target === 'whatsapp') {
                 try {
                     const myWaNumber = "6285163133417@s.whatsapp.net";
@@ -161,7 +168,7 @@ export default {
                     { name: '🔹 Discord', value: discordStatus, inline: true },
                     { name: '🔹 Facebook', value: fbStatus, inline: true },
                     { name: '🔹 Telegram', value: teleStatus, inline: true },
-                    { name: '🟢 WhatsApp', value: waStatus, inline: true } // 🟢 FIELD BARU DI EMBED
+                    { name: '🟢 WhatsApp', value: waStatus, inline: true }
                 )
                 .setThumbnail(trackCover)
                 .setFooter({ text: `Admin: ${interaction.user.username} • History Logged`, iconURL: interaction.user.displayAvatarURL() })

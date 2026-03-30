@@ -11,8 +11,8 @@ import { generateNowPlayingImage } from './imageProcessor.js';
 import { getRandomComment } from './commentGenerator.js'; 
 import { postToTelegram } from "./telegram.js"; 
 import { logPlayHistory } from './history.js'; 
-import { getTrackInfo } from './coverFinder.js'; 
-import { sendWhatsAppPost } from './whatsapp.js'; // 🟢 IMPORT MESIN WA KITA!
+import { getTrackInfo, cleanMetadata } from './coverFinder.js'; // 🌟 Import cleanMetadata
+import { sendWhatsAppPost } from './whatsapp.js'; 
 
 dotenv.config();
 
@@ -97,7 +97,9 @@ export async function performAutopost(client) {
         let trackArtist = odesliData.artist;
         let trackCover = odesliData.imageUrl;
 
-        console.log(`🔍 Memurnikan metadata lagu: ${trackTitle} - ${trackArtist}...`);
+        console.log(`🔍 Refining metadata for: ${trackTitle} - ${trackArtist}...`);
+        
+        // 1. LAYER 1: API REFINEMENT (Deezer/iTunes)
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
 
         if (hdInfo) {
@@ -106,9 +108,14 @@ export async function performAutopost(client) {
             if (hdInfo.coverUrl) {
                 trackCover = hdInfo.coverUrl;                
             }
-            console.log(`✅ Dimurnikan via API: ${trackTitle} - ${trackArtist}`);
+            console.log(`✅ Refined via API: ${trackTitle} - ${trackArtist}`);
         } else {
-            console.log(`⚠️ Gagal memurnikan, tetap pakai data Odesli.`);
+            // 🌟 LAYER 2: MANUAL CLEANING (Bilingual/Kanji Cleaner)
+            // If API fails, we still clean the text manually
+            const cleaned = cleanMetadata(trackTitle, trackArtist);
+            trackTitle = cleaned.cleanTitle || trackTitle;
+            trackArtist = cleaned.cleanArtist || trackArtist;
+            console.log(`⚠️ API Match failed. Manually cleaned: ${trackTitle} - ${trackArtist}`);
         }
 
         const finalTrack = { name: trackTitle, artist: trackArtist };
@@ -122,12 +129,15 @@ export async function performAutopost(client) {
             artist: trackArtist,
             coverUrl: trackCover
         };
+        
+        // 2. IMAGE GENERATION (Bea Cukai internal imageProcessor handles YouTube HD logic)
         const imageBuffer = await generateNowPlayingImage(songObj, dayNumber);
 
         if (!imageBuffer) return false;
 
         logPlayHistory(trackTitle, trackArtist, 'AUTOPOST', 'autopost', trackCover);
 
+        // 3. CAPTION GENERATION (Uses the clean Title & Artist)
         const caption = await generateCaption({ 
             day: dayNumber, 
             title: trackTitle, 
@@ -137,7 +147,7 @@ export async function performAutopost(client) {
         
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-        // --- 🔵 POSTING KE FACEBOOK ---
+        // --- 🔵 FACEBOOK ---
         if (process.env.FACEBOOK_PAGE_ID) {
             try {
                 const postId = await postToFacebook(imageBuffer, caption);
@@ -148,27 +158,24 @@ export async function performAutopost(client) {
             } catch (e) { console.error("FB Post Error:", e.message); }
         }
 
-        // --- 🔵 POSTING KE TELEGRAM ---
+        // --- 🔵 TELEGRAM ---
         if (process.env.TELEGRAM_BOT_TOKEN) {
             try {
                 await postToTelegram(imageBuffer, caption, engagementComment);
             } catch (e) { console.error("Tele Post Error:", e.message); }
         }
 
-        // --- 🟢 POSTING KE WHATSAPP PRIBADI ---
+        // --- 🟢 WHATSAPP CEO ---
         try {
-            console.log("🟢 Mengirim draft ke WhatsApp CEO...");
+            console.log("🟢 Sending draft to WhatsApp CEO...");
             const myWaNumber = "6285163133417@s.whatsapp.net"; 
-            
-            // Gabungin caption sama comment biar gampang di-forward
             const waCaption = `${caption}\n\n💬 ${engagementComment}`;
-            
             await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
         } catch (waError) { 
-            console.error("❌ Gagal kirim ke WA:", waError.message); 
+            console.error("❌ WA Post Error:", waError.message); 
         }
 
-        // --- 🟣 POSTING KE DISCORD ---
+        // --- 🟣 DISCORD ---
         console.log(`📣 Sending to Discord...`);
         for await (const [key, value] of db.iterator()) {
             if (key && key.startsWith('sub:')) {
