@@ -1,8 +1,14 @@
 // src/commands/setchannel.js
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import Keyv from 'keyv';
+import { KeyvPostgres } from '@keyv/postgres';
 
-const db = new Keyv();
+const db = new Keyv({
+  store: new KeyvPostgres({
+    uri: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  })
+});
 
 export default {
   data: new SlashCommandBuilder()

@@ -1,7 +1,8 @@
 // src/commands/testpost.js
 
 import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
-import Keyv from 'keyv'; 
+import Keyv from 'keyv';
+import { KeyvPostgres } from '@keyv/postgres';
 import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
@@ -14,7 +15,12 @@ import { postToTelegram } from '../telegram.js';
 import { logPlayHistory } from '../history.js'; 
 import { sendWhatsAppPost } from '../whatsapp.js'; 
 
-const db = new Keyv();
+const db = new Keyv({
+  store: new KeyvPostgres({
+    uri: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  })
+});
 
 async function getRandomTrack() {
     const playlist = await getPlaylistTracks();

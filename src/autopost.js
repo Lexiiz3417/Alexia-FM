@@ -1,7 +1,8 @@
 // src/autopost.js
 
 import dotenv from "dotenv";
-import Keyv from "keyv";
+import Keyv from 'keyv';
+import { KeyvPostgres } from '@keyv/postgres';
 import { getPlaylistTracks } from "./ytmusic.js";
 import { getOdesliData } from "./songlink.js";
 import { generateCaption } from "./caption.js";
@@ -16,7 +17,13 @@ import { sendWhatsAppPost } from './whatsapp.js';
 
 dotenv.config();
 
-const db = new Keyv();
+const db = new Keyv({
+  store: new KeyvPostgres({
+    uri: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  })
+});
+
 const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
 const HISTORY_LIMIT = 50; 
 
