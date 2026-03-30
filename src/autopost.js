@@ -12,7 +12,7 @@ import { generateNowPlayingImage } from './imageProcessor.js';
 import { getRandomComment } from './commentGenerator.js'; 
 import { postToTelegram } from "./telegram.js"; 
 import { logPlayHistory } from './history.js'; 
-import { getTrackInfo, cleanMetadata } from './coverFinder.js'; // 🌟 Import cleanMetadata
+import { getTrackInfo, cleanMetadata } from './coverFinder.js'; 
 import { sendWhatsAppPost } from './whatsapp.js'; 
 
 dotenv.config();
