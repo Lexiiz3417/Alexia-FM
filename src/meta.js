@@ -94,12 +94,34 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
     // --- 📸 3. INSTAGRAM SECTION ---
     if (IG_ID) {
         try {
+            console.log("📸 [Meta] Creating Instagram container...");
             const cRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media?image_url=${encodeURIComponent(publicImageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
             const cData = await cRes.json();
+            
             if (cData.id) {
+                // 1. Publish Gambar
                 const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media_publish?creation_id=${cData.id}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
                 const pData = await pRes.json();
-                report.instagram = pData.id ? "✅ Success" : "❌ Publish Failed";
+                
+                if (pData.id) {
+                    report.instagram = "✅ Success";
+                    
+                    // 🌟 2. KIRIM ENGAGEMENT COMMENT SEBAGAI FIRST COMMENT!
+                    if (engagementComment) {
+                        try {
+                            await fetch(`https://graph.facebook.com/${API_VERSION}/${pData.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { 
+                                method: 'POST' 
+                            });
+                            console.log("💬 First comment posted on Instagram!");
+                        } catch (commentErr) {
+                            console.error("❌ Failed to post IG comment:", commentErr.message);
+                        }
+                    }
+                } else {
+                    report.instagram = "❌ Publish Failed";
+                }
+            } else {
+                report.instagram = `❌ Container Error: ${cData.error?.message}`;
             }
         } catch (e) { report.instagram = `❌ Error: ${e.message}`; }
     }
