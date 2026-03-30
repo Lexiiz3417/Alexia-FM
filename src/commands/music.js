@@ -4,11 +4,11 @@ import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js
 import { getPlaylistTracks } from '../ytmusic.js';
 import { getOdesliData } from '../songlink.js';
 import { generateNowPlayingImage } from '../imageProcessor.js'; 
-import { getTrackInfo } from '../coverFinder.js'; 
+import { getTrackInfo, cleanMetadata, forceHDYouTubeCover } from '../coverFinder.js'; // 🌟 Import lengkap
 import { checkUserLimit, incrementUserLimit } from '../utils/limiter.js'; 
-import { logPlayHistory } from '../history.js'; // CCTV Alexia Wrapped
+import { logPlayHistory } from '../history.js'; 
 
-const MUSIC_LIMIT = 5; // Batas kuota harian
+const MUSIC_LIMIT = 5; 
 
 export default {
     data: new SlashCommandBuilder()
@@ -26,7 +26,6 @@ export default {
             });
         }
 
-        // Defer reply karena fetching data & generate gambar butuh waktu
         await interaction.deferReply();
 
         try {
@@ -41,7 +40,7 @@ export default {
             // 3. Ambil Data Odesli (Link Universal & Gambar)
             const odesliData = await getOdesliData(randomTrack.url);
             
-            // Data Fallback kalau Odesli gagal
+            // Data Fallback
             let finalTitle = odesliData ? odesliData.title : randomTrack.title;
             let finalArtist = odesliData ? odesliData.artist : randomTrack.artist;
             let finalImage = odesliData ? odesliData.imageUrl : randomTrack.thumbnails[randomTrack.thumbnails.length - 1].url;
@@ -53,6 +52,12 @@ export default {
                 finalTitle = hdInfo.title || finalTitle;
                 finalArtist = hdInfo.artist || finalArtist;
                 if (hdInfo.coverUrl) finalImage = hdInfo.coverUrl;
+            } else {
+                // 🌟 FALLBACK: Deezer Gagal? Cuci Metadata & Suntik HD YouTube
+                const cleaned = cleanMetadata(finalTitle, finalArtist);
+                finalTitle = cleaned.cleanTitle || finalTitle;
+                finalArtist = cleaned.cleanArtist || finalArtist;
+                finalImage = forceHDYouTubeCover(finalImage); 
             }
 
             // 4. GENERATE GAMBAR KARTU (High Quality 2K)
@@ -77,7 +82,6 @@ export default {
             // 7. Kirim Hasil (Gambar + Embed)
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'recommendation.png' });
             
-            // Hitung sisa kuota
             const used = (limitStatus.usageCount || 0) + 1;
             const sisa = Math.max(0, MUSIC_LIMIT - used);
             const footerText = `Music Discovery • Daily Quota: ${sisa}/${MUSIC_LIMIT} left`;
@@ -99,8 +103,6 @@ export default {
             console.error("❌ Error in /music:", error);
             if (interaction.deferred) {
                 await interaction.editReply('❌ Failed to fetch music recommendation.');
-            } else {
-                await interaction.reply({ content: '❌ Failed to fetch music recommendation.', flags: ['Ephemeral'] });
             }
         }
     }

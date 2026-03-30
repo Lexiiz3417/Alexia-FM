@@ -3,13 +3,13 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getOdesliData } from '../songlink.js';
 import { generateNowPlayingImage } from '../imageProcessor.js';
-import { getTrackInfo } from '../coverFinder.js';
+import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; // 🌟 TAMBAHIN cleanMetadata
 import { generateCaption } from '../caption.js';
 import { getRandomComment } from '../commentGenerator.js';
 import { postToFacebook, commentOnPost } from '../facebook.js';
 import { postToTelegram } from '../telegram.js';
 import { logPlayHistory } from '../history.js'; 
-import { sendWhatsAppPost } from '../whatsapp.js'; // 🟢 IMPORT MESIN WA
+import { sendWhatsAppPost } from '../whatsapp.js'; 
 
 const data = new SlashCommandBuilder()
     .setName('manualpost')
@@ -31,7 +31,7 @@ const data = new SlashCommandBuilder()
                 { name: '📘 Facebook Saja', value: 'facebook' },
                 { name: '✈️ Telegram Saja', value: 'telegram' },
                 { name: '👾 Discord Saja', value: 'discord' },
-                { name: '🟢 WhatsApp Saja', value: 'whatsapp' } // 🟢 OPSI BARU
+                { name: '🟢 WhatsApp Saja', value: 'whatsapp' } 
             ));
 
 async function execute(interaction) {
@@ -60,20 +60,30 @@ async function execute(interaction) {
         let trackArtist = odesliData.artist;
         let trackCover = odesliData.imageUrl;
 
+        // 🌟 LAYER 1: Cari di Deezer (HD & Best Metadata)
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
         if (hdInfo) {
             trackTitle = hdInfo.title || trackTitle;
             trackArtist = hdInfo.artist || trackArtist;
             if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
+        } else {
+            // 🌟 LAYER 2: Deezer Gagal? Cuci Judul Manual (Bilingual/Kanji Cleaner)
+            // Biar caption di FB/WA ikutan bersih!
+            const cleaned = cleanMetadata(trackTitle, trackArtist);
+            trackTitle = cleaned.cleanTitle || trackTitle;
+            trackArtist = cleaned.cleanArtist || trackArtist;
         }
 
         const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
+        
+        // ImageProcessor juga sudah punya Bea Cukai internal untuk gambar HD
         const imageBuffer = await generateNowPlayingImage(songObj, day);
 
         if (!imageBuffer) return interaction.editReply("❌ Gagal merender gambar canvas.");
 
         logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'manualpost', trackCover);
 
+        // --- GENERATE CAPTION (Pake data yang sudah dicuci) ---
         const caption = await generateCaption({
             day: day,
             title: trackTitle,
@@ -85,7 +95,7 @@ async function execute(interaction) {
         let fbStatus = "⚪ *Skipped*";
         let teleStatus = "⚪ *Skipped*";
         let discordStatus = "⚪ *Skipped*";
-        let waStatus = "⚪ *Skipped*"; // 🟢 STATUS WA
+        let waStatus = "⚪ *Skipped*";
 
         // 📘 Facebook
         if (target === 'all' || target === 'facebook') {
@@ -108,7 +118,7 @@ async function execute(interaction) {
             } else teleStatus = "⚠️ **No Config**";
         }
 
-        // 🟢 WhatsApp (NEW)
+        // 🟢 WhatsApp
         if (target === 'all' || target === 'whatsapp') {
             try {
                 const myWaNumber = "6285163133417@s.whatsapp.net";
@@ -147,7 +157,7 @@ async function execute(interaction) {
                 { name: '📊 Distribution Report', value: 
                     `🔹 **Facebook:** ${fbStatus}\n` +
                     `🔹 **Telegram:** ${teleStatus}\n` +
-                    `🔹 **WhatsApp:** ${waStatus}\n` + // 🟢 TAMPIL DI LAPORAN
+                    `🔹 **WhatsApp:** ${waStatus}\n` + 
                     `🔹 **Discord:** ${discordStatus}`, 
                   inline: false 
                 }
