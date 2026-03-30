@@ -5,6 +5,7 @@ function cleanMetadata(rawTitle, rawArtist) {
     let title = rawTitle || "";
     let artist = rawArtist || "";
 
+    // 1. Filter Artis Bodong (Topic, Release, Various Artists)
     const isBadArtist = artist.toLowerCase().includes('topic') || 
                         artist.toLowerCase() === 'release' || 
                         artist.toLowerCase() === 'various artists';
@@ -19,6 +20,23 @@ function cleanMetadata(rawTitle, rawArtist) {
         }
     }
 
+    // 🌟 2. JURUS BILINGUAL SPLITTER (Pemusnah Judul Ganda Kanji - English) 🌟
+    if (title.includes(' - ') || title.includes(' / ')) {
+        const separator = title.includes(' - ') ? ' - ' : ' / ';
+        const parts = title.split(separator);
+        
+        // Regex untuk mendeteksi aksara CJK (Jepang/Korea/Mandarin) di bagian pertama
+        const hasCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(parts[0]);
+        
+        // Kalau bagian depannya ada Kanji dan judulnya kebelah dua...
+        if (hasCJK && parts.length >= 2) {
+            // Buang Kanjinya, ambil sisa bahasa Inggrisnya
+            title = parts.slice(1).join(separator).trim();
+            console.log(`🧹 Bilingual detected! Cleaned title to: "${title}"`);
+        }
+    }
+
+    // 3. Pembersih Embel-embel (Official, MV, Audio, dll)
     title = title.replace(/\s*[\(\[].*?(official|video|audio|lyric|mv|visualizer).*?[\)\]]\s*/gi, '').trim();
 
     return { cleanTitle: title, cleanArtist: artist };
