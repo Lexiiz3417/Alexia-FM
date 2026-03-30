@@ -8,18 +8,18 @@ import { getOdesliData } from '../songlink.js';
 import { generateCaption } from '../caption.js';
 import { updateBotPresence, sendAutoPostEmbed } from '../discord.js'; 
 import { generateNowPlayingImage } from '../imageProcessor.js';
-import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; // 🌟 Import cleanMetadata
-import { postToFacebook, commentOnPost } from '../facebook.js';
+import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; 
+import { postToMeta } from '../meta.js'; // 🌟 Gunakan Meta Terpadu
 import { getRandomComment } from '../commentGenerator.js'; 
 import { postToTelegram } from '../telegram.js'; 
 import { logPlayHistory } from '../history.js'; 
 import { sendWhatsAppPost } from '../whatsapp.js'; 
 
 const db = new Keyv({
-  store: new KeyvPostgres({
-    uri: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  })
+    store: new KeyvPostgres({
+        uri: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+    })
 });
 
 async function getRandomTrack() {
@@ -30,14 +30,14 @@ async function getRandomTrack() {
 export default {
     data: new SlashCommandBuilder()
         .setName('testpost')
-        .setDescription('OWNER ONLY: Simulate daily autopost.')
+        .setDescription('OWNER ONLY: Simulate daily autopost with multi-platform support.')
         .addStringOption(option =>
             option.setName('target')
                 .setDescription('Choose platform')
                 .setRequired(false) 
                 .addChoices(
                     { name: '🚀 All Platforms', value: 'all' },
-                    { name: '📘 Facebook Only', value: 'facebook' },
+                    { name: '📸 Meta (FB, IG, Threads)', value: 'meta' },
                     { name: '✈️ Telegram Only', value: 'telegram' }, 
                     { name: '👾 Discord Only', value: 'discord' },
                     { name: '🟢 WhatsApp Only', value: 'whatsapp' } 
@@ -58,7 +58,7 @@ export default {
             await interaction.deferReply(); 
 
             const savedChannelId = await db.get(`sub:${interaction.guildId}`);
-            if (!savedChannelId && !['telegram', 'facebook', 'whatsapp'].includes(target)) {
+            if (!savedChannelId && !['telegram', 'meta', 'whatsapp'].includes(target)) {
                 return interaction.editReply({ 
                     content: '❌ **Error:** No Discord channel set. Run `/setchannel` first.' 
                 });
@@ -74,56 +74,47 @@ export default {
             let trackArtist = odesliData.artist;
             let trackCover = odesliData.imageUrl;
 
-            // 1. LAYER 1: Cari di Deezer (HD & Best Metadata)
+            // 1. REFINEMENT METADATA
             const hdInfo = await getTrackInfo(trackTitle, trackArtist);
             if (hdInfo) {
                 trackTitle = hdInfo.title || trackTitle;
                 trackArtist = hdInfo.artist || trackArtist;
                 if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
             } else {
-                // 🌟 LAYER 2: Deezer Gagal? Cuci Judul Manual (Bilingual/Kanji Cleaner)
                 const cleaned = cleanMetadata(trackTitle, trackArtist);
                 trackTitle = cleaned.cleanTitle || trackTitle;
                 trackArtist = cleaned.cleanArtist || trackArtist;
             }
 
             const finalTrack = { name: trackTitle, artist: trackArtist };
-            
             if (interaction.client) updateBotPresence(interaction.client, finalTrack); 
 
             const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
             const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
-            const songObj = {
-                title: trackTitle,
-                artist: trackArtist,
-                coverUrl: trackCover
-            };
+            const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
 
-            // 2. GENERATE IMAGE (ImageProcessor juga sudah punya Bea Cukai internal)
+            // 2. GENERATE IMAGE
             const imageBuffer = await generateNowPlayingImage(songObj, `TEST DAY #${dayNumber}`);
             if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
             logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'testpost', trackCover);
 
-            // 3. GENERATE CAPTION (Pake data yang sudah bersih!)
+            // 3. GENERATE CAPTION
             const caption = await generateCaption({ day: dayNumber, title: trackTitle, artist: trackArtist, link: odesliData.pageUrl });
             const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-            let fbStatus = "⚪ *Skipped*";
+            let metaStatus = "⚪ *Skipped*";
             let discordStatus = "⚪ *Skipped*";
             let teleStatus = "⚪ *Skipped*";
             let waStatus = "⚪ *Skipped*";
 
-            // A. FACEBOOK
-            if (target === 'all' || target === 'facebook') {
-                if (process.env.FACEBOOK_PAGE_ID) {
-                    const postId = await postToFacebook(imageBuffer, caption);
-                    if (postId) {
-                        fbStatus = `✅ **Posted**`;
-                        await commentOnPost(postId, engagementComment);
-                    } else fbStatus = "❌ **Failed**";
-                } else fbStatus = "⚠️ **No Config**";
+            // A. META (FACEBOOK, INSTAGRAM, THREADS)
+            if (target === 'all' || target === 'meta') {
+                if (process.env.META_ACCESS_TOKEN) {
+                    const report = await postToMeta(imageBuffer, caption, engagementComment);
+                    metaStatus = `FB: ${report.facebook}\nIG: ${report.instagram}\nThreads: ${report.threads}`;
+                } else metaStatus = "⚠️ **No Config**";
             }
 
             // B. TELEGRAM
@@ -141,9 +132,7 @@ export default {
                     const waCaption = `${caption}\n\n💬 ${engagementComment}`;
                     await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
                     waStatus = "✅ **Sent to CEO**";
-                } catch (e) {
-                    waStatus = `❌ **Error:** ${e.message}`;
-                }
+                } catch (e) { waStatus = `❌ **Error:** ${e.message}`; }
             }
 
             // D. DISCORD
@@ -158,35 +147,31 @@ export default {
                         channelId: savedChannelId 
                     });
                     discordStatus = `✅ **Sent** to <#${savedChannelId}>`;
-                } catch (err) {
-                    discordStatus = `❌ **Error:** ${err.message}`;
-                }
+                } catch (err) { discordStatus = `❌ **Error:** ${err.message}`; }
             }
 
-            // --- 5. RENDER LAPORAN ESTETIK ---
+            // --- 5. RENDER LAPORAN TEST ---
             const reportEmbed = new EmbedBuilder()
                 .setColor('#2ecc71')
                 .setAuthor({ name: 'System Simulation', iconURL: interaction.client.user.displayAvatarURL() })
                 .setTitle(`🧪 Autopost Test Complete: Day #${dayNumber}`)
-                .setDescription(`Successfully simulated a post for **${trackTitle}** by **${trackArtist}**.`)
+                .setDescription(`Simulated a multi-platform post for **${trackTitle}**.`)
                 .addFields(
-                    { name: '🌐 Platform Status', value: '\u200B' },
-                    { name: '🔹 Discord', value: discordStatus, inline: true },
-                    { name: '🔹 Facebook', value: fbStatus, inline: true },
-                    { name: '🔹 Telegram', value: teleStatus, inline: true },
-                    { name: '🟢 WhatsApp', value: waStatus, inline: true }
+                    { name: '🎵 Song Information', value: `**${trackTitle}** by ${trackArtist}`, inline: false },
+                    { name: '🔹 Meta (FB, IG, Threads)', value: metaStatus, inline: false },
+                    { name: '🔹 Discord Status', value: discordStatus, inline: true },
+                    { name: '🔹 Telegram Status', value: teleStatus, inline: true },
+                    { name: '🟢 WhatsApp Status', value: waStatus, inline: true }
                 )
                 .setThumbnail(trackCover)
-                .setFooter({ text: `Admin: ${interaction.user.username} • History Logged`, iconURL: interaction.user.displayAvatarURL() })
+                .setFooter({ text: `Admin: ${interaction.user.username} • All Systems Tested`, iconURL: interaction.user.displayAvatarURL() })
                 .setTimestamp();
             
             await interaction.editReply({ embeds: [reportEmbed] });
 
         } catch (error) {
             console.error("❌ TestPost Error:", error);
-            if (interaction.deferred) {
-                await interaction.editReply({ content: '❌ **Simulation Failed:** Check terminal for details.' });
-            }
+            if (interaction.deferred) await interaction.editReply({ content: '❌ **Simulation Failed:** Check terminal for details.' });
         }
     }
 };

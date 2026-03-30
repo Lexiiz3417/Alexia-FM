@@ -13,7 +13,6 @@ import {
 } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
-// pathToFileURL ditambahkan di sini biar aman di Windows & Linux
 import { fileURLToPath, pathToFileURL } from 'url'; 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,8 +34,6 @@ export async function startDiscordBot() {
   // Load semua command dari folder /commands
   for (const file of commandFiles) {
       const filePath = path.join(commandsPath, file);
-      
-      // FIX UNTUK WINDOWS: Ubah path jadi format URL standar ESM (file:///)
       const fileUrl = pathToFileURL(filePath).href; 
       const commandModule = await import(fileUrl);
       
@@ -48,29 +45,35 @@ export async function startDiscordBot() {
       }
   }
 
-  // Register Slash Commands ke Discord API
+  // Register Slash Commands
   const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
   try {
       console.log(`Started refreshing ${commands.length} application (/) commands.`);
-      
-      // Register global commands
       await rest.put(
           Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
           { body: commands },
       );
-
       console.log(`✅ Successfully reloaded application (/) commands.`);
   } catch (error) {
       console.error(error);
   }
 
-  // Event saat Bot Online
+  // 🎧 Event saat Bot Online (DENGAN INITIAL STATUS)
   client.once(Events.ClientReady, c => {
       console.log(`🎧 DJ ${c.user.tag} is ready to serve!`);
+      
+      // Pasang status awal biar gak bengong pas baru login
+      c.user.setPresence({
+        activities: [{ 
+            name: 'Alexia FM Radio 📻', 
+            type: ActivityType.Listening 
+        }],
+        status: 'online',
+      });
   });
 
-  // Event saat ada Command masuk
+  // Event Interaction Create
   client.on(Events.InteractionCreate, async interaction => {
       if (!interaction.isChatInputCommand()) return;
 
@@ -81,7 +84,6 @@ export async function startDiscordBot() {
           await command.execute(interaction);
       } catch (error) {
           console.error(error);
-          // Menggunakan flags: ['Ephemeral'] sesuai standar terbaru Discord.js v14
           if (interaction.replied || interaction.deferred) {
               await interaction.followUp({ content: 'There was an error executing this command!', flags: ['Ephemeral'] });
           } else {
@@ -90,22 +92,17 @@ export async function startDiscordBot() {
       }
   });
 
-  // Login
   await client.login(process.env.DISCORD_TOKEN);
   return client;
 }
 
 /**
- * 2. FUNGSI AUTOPOST
- * Mengirim embed dengan dukungan Image Buffer & Auto Comment
+ * 2. FUNGSI AUTOPOST DISCORD
  */
 export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, imageBuffer, channelId }) {
   try {
       const channel = await client.channels.fetch(channelId);
-      if (!channel) {
-          console.warn(`⚠️ Channel ${channelId} not found or bot has no access.`);
-          return;
-      }
+      if (!channel) return console.warn(`⚠️ Channel ${channelId} not found.`);
 
       const embed = new EmbedBuilder()
         .setColor('Random')
@@ -113,13 +110,8 @@ export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, im
         .setTimestamp();
 
       const payload = { embeds: [embed] };
+      if (comment) payload.content = comment;
 
-      // Auto Comment (Engagement)
-      if (comment) {
-          payload.content = comment;
-      }
-
-      // Handle Gambar (Buffer vs URL)
       if (imageBuffer) {
         const attachment = new AttachmentBuilder(imageBuffer, { name: 'card.png' });
         embed.setImage('attachment://card.png');
@@ -131,15 +123,30 @@ export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, im
       await channel.send(payload);
 
   } catch (error) {
-      console.error(`❌ Failed to send to Discord channel ${channelId}:`, error.message);
+      console.error(`❌ Discord Post Error:`, error.message);
   }
 }
 
 /**
- * 3. UPDATE STATUS BOT
+ * 3. UPDATE STATUS BOT (REVISI: Listening to...)
  */
 export async function updateBotPresence(client, track) {
-  if (client.user) {
-      client.user.setActivity(`${track.name} by ${track.artist}`, { type: ActivityType.Listening });
+  if (!client.user || !track) return;
+
+  try {
+    const statusText = `${track.name} by ${track.artist}`;
+    
+    // Gunakan setPresence agar status "Listening to" lebih persisten
+    client.user.setPresence({
+      activities: [{ 
+        name: statusText, 
+        type: ActivityType.Listening 
+      }],
+      status: 'online',
+    });
+
+    console.log(`🎧 Presence Updated: Listening to ${statusText}`);
+  } catch (error) {
+    console.error("❌ Failed to update presence:", error.message);
   }
 }

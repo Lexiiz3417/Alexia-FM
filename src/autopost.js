@@ -6,7 +6,7 @@ import { KeyvPostgres } from '@keyv/postgres';
 import { getPlaylistTracks } from "./ytmusic.js";
 import { getOdesliData } from "./songlink.js";
 import { generateCaption } from "./caption.js";
-import { postToFacebook, commentOnPost } from "./facebook.js";
+import { postToMeta } from "./meta.js"; // 🌟 Versi Terpadu (FB, IG, Threads)
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { generateNowPlayingImage } from './imageProcessor.js'; 
 import { getRandomComment } from './commentGenerator.js'; 
@@ -18,15 +18,18 @@ import { sendWhatsAppPost } from './whatsapp.js';
 dotenv.config();
 
 const db = new Keyv({
-  store: new KeyvPostgres({
-    uri: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  })
+    store: new KeyvPostgres({
+        uri: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+    })
 });
 
 const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
 const HISTORY_LIMIT = 50; 
 
+/**
+ * 🔄 Logika Pengambilan Lagu (Shuffle & Anti-Repeat)
+ */
 async function getNextTrack() {
     let shuffledPlaylist = await db.get('shuffled_playlist');
     let currentIndex = await db.get('playlist_index') || 0;
@@ -35,7 +38,6 @@ async function getNextTrack() {
     if (!shuffledPlaylist || currentIndex >= shuffledPlaylist.length) {
         console.log("🔄 Playlist finished or empty. Reshuffling...");
         shuffledPlaylist = await getPlaylistTracks();
-        
         if (!shuffledPlaylist || shuffledPlaylist.length === 0) return null;
         
         shuffledPlaylist = shuffledPlaylist.sort(() => Math.random() - 0.5);
@@ -56,29 +58,21 @@ async function getNextTrack() {
             await db.set('playlist_index', currentIndex);
             
             history.push(candidate.url);
-            if (history.length > HISTORY_LIMIT) {
-                history.shift(); 
-            }
+            if (history.length > HISTORY_LIMIT) history.shift(); 
             await db.set('played_history', history);
-            
             break; 
-        } else {
-            console.log(`⚠️ Skipping track: "${candidate.title}" (Recently played).`);
-            currentIndex++; 
         }
+        currentIndex++; 
         attempts++;
         if (attempts > 500) break; 
     }
 
-    if (!track && shuffledPlaylist.length > 0) {
-        console.log("⚠️ Warning: Picking fallback track.");
-        track = shuffledPlaylist[0]; 
-        await db.set('playlist_index', shuffledPlaylist.length); 
-    }
-
-    return track;
+    return track || shuffledPlaylist[0];
 }
 
+/**
+ * 🚀 FUNGSI UTAMA AUTOPOST (DAILY 12:00 PM)
+ */
 export async function performAutopost(client) {
     try {
         console.log("🚀 Starting daily autoposting task...");
@@ -88,102 +82,74 @@ export async function performAutopost(client) {
         const dayNumber = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
         
         const initialTrack = await getNextTrack();
-        
-        if (!initialTrack) {
-            console.error("❌ Failed to get next track.");
-            return false;
-        }
+        if (!initialTrack) return console.error("❌ Failed to get next track.");
         
         const odesliData = await getOdesliData(initialTrack.url);
-        if (!odesliData) {
-            console.error("❌ Failed to fetch Odesli data. Skipping.");
-            return false;
-        }
+        if (!odesliData) return console.error("❌ Failed to fetch Odesli data.");
 
         let trackTitle = odesliData.title;
         let trackArtist = odesliData.artist;
         let trackCover = odesliData.imageUrl;
 
-        console.log(`🔍 Refining metadata for: ${trackTitle} - ${trackArtist}...`);
-        
-        // 1. LAYER 1: API REFINEMENT (Deezer/iTunes)
+        // 1. REFINEMENT METADATA (HD Cover & Clean Text)
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
-
         if (hdInfo) {
             trackTitle = hdInfo.title || trackTitle;        
             trackArtist = hdInfo.artist || trackArtist;      
-            if (hdInfo.coverUrl) {
-                trackCover = hdInfo.coverUrl;                
-            }
-            console.log(`✅ Refined via API: ${trackTitle} - ${trackArtist}`);
+            if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
+            console.log(`✅ Refined via API: ${trackTitle}`);
         } else {
-            // 🌟 LAYER 2: MANUAL CLEANING (Bilingual/Kanji Cleaner)
-            // If API fails, we still clean the text manually
             const cleaned = cleanMetadata(trackTitle, trackArtist);
             trackTitle = cleaned.cleanTitle || trackTitle;
             trackArtist = cleaned.cleanArtist || trackArtist;
-            console.log(`⚠️ API Match failed. Manually cleaned: ${trackTitle} - ${trackArtist}`);
         }
 
-        const finalTrack = { name: trackTitle, artist: trackArtist };
+        // 2. DISCORD PRESENCE UPDATE
+        if (client) await updateBotPresence(client, { name: trackTitle, artist: trackArtist });
 
-        if (client) {
-            await updateBotPresence(client, finalTrack);
-        }
-
-        const songObj = {
-            title: trackTitle,
-            artist: trackArtist,
-            coverUrl: trackCover
-        };
-        
-        // 2. IMAGE GENERATION (Bea Cukai internal imageProcessor handles YouTube HD logic)
+        // 3. IMAGE GENERATION (Render 2K Image)
+        const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
         const imageBuffer = await generateNowPlayingImage(songObj, dayNumber);
+        if (!imageBuffer) return console.error("❌ Failed to render image.");
 
-        if (!imageBuffer) return false;
-
-        logPlayHistory(trackTitle, trackArtist, 'AUTOPOST', 'autopost', trackCover);
-
-        // 3. CAPTION GENERATION (Uses the clean Title & Artist)
+        // 4. CAPTION & COMMENT PREPARATION
         const caption = await generateCaption({ 
             day: dayNumber, 
             title: trackTitle, 
             artist: trackArtist, 
             link: odesliData.pageUrl 
         });
-        
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-        // --- 🔵 FACEBOOK ---
-        if (process.env.FACEBOOK_PAGE_ID) {
+        // --- 🚀 DISTRIBUSI MULTI-PLATFORM ---
+
+        // 📘 📸 🧵 A. META ECOSYSTEM (FB, IG, THREADS)
+        if (process.env.META_ACCESS_TOKEN) {
             try {
-                const postId = await postToFacebook(imageBuffer, caption);
-                if (postId) {
-                    console.log(`✅ FB Post ID: ${postId}`);
-                    await commentOnPost(postId, engagementComment);
-                }
-            } catch (e) { console.error("FB Post Error:", e.message); }
+                console.log("📡 Sending to Meta (FB, IG, Threads)...");
+                const metaReport = await postToMeta(imageBuffer, caption, engagementComment);
+                console.log(`✅ Meta Results -> FB: ${metaReport.facebook} | IG: ${metaReport.instagram} | Threads: ${metaReport.threads}`);
+            } catch (e) { console.error("❌ Meta Error:", e.message); }
         }
 
-        // --- 🔵 TELEGRAM ---
+        // ✈️ B. TELEGRAM
         if (process.env.TELEGRAM_BOT_TOKEN) {
             try {
                 await postToTelegram(imageBuffer, caption, engagementComment);
-            } catch (e) { console.error("Tele Post Error:", e.message); }
+                console.log("✅ Posted to Telegram.");
+            } catch (e) { console.error("❌ Telegram Error:", e.message); }
         }
 
-        // --- 🟢 WHATSAPP CEO ---
+        // 🟢 C. WHATSAPP CEO (6285163133417)
         try {
-            console.log("🟢 Sending draft to WhatsApp CEO...");
             const myWaNumber = "6285163133417@s.whatsapp.net"; 
             const waCaption = `${caption}\n\n💬 ${engagementComment}`;
             await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
-        } catch (waError) { 
-            console.error("❌ WA Post Error:", waError.message); 
-        }
+            console.log("✅ Sent to WhatsApp CEO.");
+        } catch (e) { console.error("❌ WA Error:", e.message); }
 
-        // --- 🟣 DISCORD ---
-        console.log(`📣 Sending to Discord...`);
+        // 🟣 D. DISCORD CHANNELS (Subscribers)
+        console.log(`📣 Broadcasting to Discord Subscribers...`);
         for await (const [key, value] of db.iterator()) {
             if (key && key.startsWith('sub:')) {
                 const channelId = value;
@@ -196,16 +162,17 @@ export async function performAutopost(client) {
                         imageBuffer, 
                         channelId 
                     });
-                } catch (error) { 
-                    console.error(`Skipping channel ${channelId}:`, error.message); 
-                }
+                } catch (error) { console.error(`Skipping channel ${channelId}:`, error.message); }
             }
         }
         
-        console.log(`✅ Autopost Day #${dayNumber} completed and logged to history.`);
+        // 5. LOG HISTORY
+        logPlayHistory(trackTitle, trackArtist, 'AUTOPOST', 'autopost', trackCover);
+        console.log(`🏁 [DAY #${dayNumber}] ALL SYSTEMS GO! MISSION ACCOMPLISHED.`);
         return true;
+
     } catch (err) {
-        console.error("❌ Autopost Error:", err);
+        console.error("❌ Fatal Autopost Error:", err);
         return false;
     }
 }

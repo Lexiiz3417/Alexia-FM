@@ -1,25 +1,23 @@
-// src/facebook.js
-
+// src/meta.js
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 
 const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
-const ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
-const API_VERSION = process.env.FACEBOOK_API_VERSION || 'v18.0';
-// 👇 Tambahin variable buat nangkep API Key ImgBB
-const IMGBB_API_KEY = process.env.IMGBB_API_KEY; 
+const IG_ID = process.env.IG_BUSINESS_ID;
+const THREADS_ID = process.env.THREADS_USER_ID;
+const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN; // Satu token untuk semua
+const API_VERSION = process.env.META_API_VERSION || 'v19.0';
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// 🌟 FUNGSI RAHASIA: Maling Hosting ImgBB
+/**
+ * 📦 FUNGSI UPLOAD KE IMGBB
+ * Wajib untuk IG & Threads, Opsional (Fallback) untuk FB.
+ */
 async function uploadToImgBB(imageBuffer) {
-    if (!IMGBB_API_KEY) {
-        console.warn("⚠️ IMGBB_API_KEY kosong. Fallback ImgBB dibatalkan.");
-        return null;
-    }
+    if (!IMGBB_API_KEY) return null;
     try {
-        console.log("⏳ Uploading to ImgBB as fallback...");
-        // ImgBB minta format Base64
         const base64Image = imageBuffer.toString('base64');
         const body = new URLSearchParams();
         body.append('image', base64Image);
@@ -28,115 +26,96 @@ async function uploadToImgBB(imageBuffer) {
             method: 'POST',
             body: body
         });
-        
         const data = await res.json();
-        if (data.success) {
-            console.log("✅ ImgBB Upload Success:", data.data.url);
-            return data.data.url;
-        }
-        return null;
+        return data.success ? data.data.url : null;
     } catch (e) {
-        console.error("❌ ImgBB Upload Error:", e.message);
+        console.error("❌ [ImgBB] Upload Error:", e.message);
         return null;
     }
 }
 
-export async function postToFacebook(imageSource, caption) {
-    if (!PAGE_ID || !ACCESS_TOKEN) return null;
+/**
+ * 🚀 FUNGSI SAKTI: POST KE META ECOSYSTEM (FB, IG, THREADS)
+ */
+export async function postToMeta(imageBuffer, caption, engagementComment = "") {
+    let report = { facebook: "⚪ Skipped", instagram: "⚪ Skipped", threads: "⚪ Skipped" };
+    if (!ACCESS_TOKEN) return report;
 
-    const url = `https://graph.facebook.com/${API_VERSION}/${PAGE_ID}/photos`;
-    let retries = 3;
-    let backoff = 2000;
-    
-    // Status penanda fallback
-    let isFallbackMode = false;
-    let fallbackImageUrl = null;
+    // --- 1. PREPARASI: UPLOAD KE IMGBB DULU ---
+    // Karena IG & Threads gak bisa hidup tanpa URL.
+    const publicImageUrl = await uploadToImgBB(imageBuffer);
 
-    for (let i = 0; i < retries; i++) {
-        try {
-            const form = new FormData();
-            form.append('access_token', ACCESS_TOKEN);
-            form.append('message', caption);
-            form.append('published', 'true');
+    // --- 📘 2. FACEBOOK SECTION (Logika Retry & Fallback Lu) ---
+    if (PAGE_ID) {
+        let fbSuccess = false;
+        let fbRetries = 3;
+        for (let i = 0; i < fbRetries; i++) {
+            try {
+                const form = new FormData();
+                form.append('access_token', ACCESS_TOKEN);
+                form.append('message', caption);
 
-            if (Buffer.isBuffer(imageSource)) {
-                // Kalo udah masuk mode fallback, kirim URL ImgBB-nya ke Facebook
-                if (isFallbackMode && fallbackImageUrl) {
-                    form.append('url', fallbackImageUrl);
+                // Jika Direct Upload gagal atau ini retry, gunakan URL ImgBB
+                if (i > 0 && publicImageUrl) {
+                    form.append('url', publicImageUrl);
                 } else {
-                    // Percobaan pertama: Direct Upload
-                    form.append('source', imageSource, { 
-                        filename: 'alexiacard.png', 
-                        contentType: 'image/png',
-                        knownLength: imageSource.length 
-                    });
+                    form.append('source', imageBuffer, { filename: 'alexia.png' });
                 }
-            } else {
-                form.append('url', imageSource);
-            }
 
-            const response = await fetch(url, { 
-                method: 'POST', 
-                body: form,
-                headers: form.getHeaders() 
-            });
-            
-            const data = await response.json();
+                const res = await fetch(`https://graph.facebook.com/${API_VERSION}/${PAGE_ID}/photos`, {
+                    method: 'POST',
+                    body: form
+                });
+                const data = await res.json();
 
-            if (!response.ok) {
-                throw new Error(`FB API Rejected: ${data.error?.message || response.statusText}`);
-            }
-
-            if (data.id) {
-                console.log(`✅ Successfully posted to FB! ID: ${data.id} ${isFallbackMode ? '(via ImgBB)' : '(Direct)'}`);
-                return data.id; 
-            }
-            return null;
-
-        } catch (error) {
-            console.warn(`⚠️ [FB Retry] Attempt ${i + 1} failed: ${error.message}`);
-            
-            // 🔥 OTOMATIS NYALA KALO FB NGASIH ERROR 400
-            if (!isFallbackMode && Buffer.isBuffer(imageSource)) {
-                console.log("🔄 Mengaktifkan Mode Fallback ImgBB...");
-                fallbackImageUrl = await uploadToImgBB(imageSource);
-                if (fallbackImageUrl) {
-                    isFallbackMode = true; // Ubah status biar percobaan berikutnya pake link
+                if (data.id) {
+                    report.facebook = `✅ Success ${i > 0 ? '(via ImgBB)' : '(Direct)'}`;
+                    fbSuccess = true;
+                    // Auto Comment di FB
+                    if (engagementComment) {
+                        await fetch(`https://graph.facebook.com/${API_VERSION}/${data.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+                    }
+                    break;
                 }
+            } catch (e) {
+                console.warn(`⚠️ [FB Retry] Attempt ${i + 1} failed`);
+                await sleep(2000 * (i + 1));
             }
-
-            if (i === retries - 1) return null;
-            await sleep(backoff);
-            backoff *= 2; 
         }
     }
-}
 
-export async function commentOnPost(postId, message) {
-    if (!ACCESS_TOKEN || !postId) return;
+    // Jika ImgBB gagal, IG & Threads gak bisa lanjut
+    if (!publicImageUrl) {
+        report.instagram = "❌ ImgBB Failed";
+        report.threads = "❌ ImgBB Failed";
+        return report;
+    }
 
-    const url = `https://graph.facebook.com/${API_VERSION}/${postId}/comments`;
-    let retries = 3;
-    let backoff = 2000;
-
-    for (let i = 0; i < retries; i++) {
+    // --- 📸 3. INSTAGRAM SECTION ---
+    if (IG_ID) {
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, access_token: ACCESS_TOKEN })
-            });
-
-            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-            console.log("💬 Successfully commented on FB post!");
-            return;
-
-        } catch (error) {
-            console.warn(`⚠️ [FB Comment Retry] Attempt ${i + 1} failed: ${error.message}`);
-            if (i === retries - 1) return;
-            await sleep(backoff);
-            backoff *= 2;
-        }
+            const cRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media?image_url=${encodeURIComponent(publicImageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+            const cData = await cRes.json();
+            if (cData.id) {
+                const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media_publish?creation_id=${cData.id}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+                const pData = await pRes.json();
+                report.instagram = pData.id ? "✅ Success" : "❌ Publish Failed";
+            }
+        } catch (e) { report.instagram = `❌ Error: ${e.message}`; }
     }
+
+    // --- 🧵 4. THREADS SECTION ---
+    if (THREADS_ID) {
+        try {
+            const tRes = await fetch(`https://graph.threads.net/v1.0/${THREADS_ID}/threads?media_type=IMAGE&image_url=${encodeURIComponent(publicImageUrl)}&text=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+            const tData = await tRes.json();
+            if (tData.id) {
+                const tpRes = await fetch(`https://graph.threads.net/v1.0/${THREADS_ID}/threads_publish?creation_id=${tData.id}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+                const tpData = await tpRes.json();
+                report.threads = tpData.id ? "✅ Success" : "❌ Publish Failed";
+            }
+        } catch (e) { report.threads = `❌ Error: ${e.message}`; }
+    }
+
+    return report;
 }

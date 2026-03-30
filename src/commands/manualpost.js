@@ -3,10 +3,10 @@
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { getOdesliData } from '../songlink.js';
 import { generateNowPlayingImage } from '../imageProcessor.js';
-import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; // 🌟 TAMBAHIN cleanMetadata
+import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; 
 import { generateCaption } from '../caption.js';
 import { getRandomComment } from '../commentGenerator.js';
-import { postToFacebook, commentOnPost } from '../facebook.js';
+import { postToMeta } from '../meta.js'; // 🌟 Gunakan Meta Terpadu
 import { postToTelegram } from '../telegram.js';
 import { logPlayHistory } from '../history.js'; 
 import { sendWhatsAppPost } from '../whatsapp.js'; 
@@ -28,7 +28,7 @@ const data = new SlashCommandBuilder()
             .setRequired(false) 
             .addChoices(
                 { name: '🌐 Semua Platform (All)', value: 'all' },
-                { name: '📘 Facebook Saja', value: 'facebook' },
+                { name: '📸 Meta (FB, IG, Threads)', value: 'meta' },
                 { name: '✈️ Telegram Saja', value: 'telegram' },
                 { name: '👾 Discord Saja', value: 'discord' },
                 { name: '🟢 WhatsApp Saja', value: 'whatsapp' } 
@@ -52,38 +52,30 @@ async function execute(interaction) {
 
     try {
         const odesliData = await getOdesliData(url);
-        if (!odesliData) {
-            return interaction.editReply("❌ Gagal mengambil metadata lagu dari link tersebut.");
-        }
+        if (!odesliData) return interaction.editReply("❌ Gagal mengambil metadata lagu.");
 
         let trackTitle = odesliData.title;
         let trackArtist = odesliData.artist;
         let trackCover = odesliData.imageUrl;
 
-        // 🌟 LAYER 1: Cari di Deezer (HD & Best Metadata)
+        // 🌟 REFINEMENT METADATA
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
         if (hdInfo) {
             trackTitle = hdInfo.title || trackTitle;
             trackArtist = hdInfo.artist || trackArtist;
             if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
         } else {
-            // 🌟 LAYER 2: Deezer Gagal? Cuci Judul Manual (Bilingual/Kanji Cleaner)
-            // Biar caption di FB/WA ikutan bersih!
             const cleaned = cleanMetadata(trackTitle, trackArtist);
             trackTitle = cleaned.cleanTitle || trackTitle;
             trackArtist = cleaned.cleanArtist || trackArtist;
         }
 
         const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
-        
-        // ImageProcessor juga sudah punya Bea Cukai internal untuk gambar HD
         const imageBuffer = await generateNowPlayingImage(songObj, day);
-
         if (!imageBuffer) return interaction.editReply("❌ Gagal merender gambar canvas.");
 
         logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'manualpost', trackCover);
 
-        // --- GENERATE CAPTION (Pake data yang sudah dicuci) ---
         const caption = await generateCaption({
             day: day,
             title: trackTitle,
@@ -92,20 +84,17 @@ async function execute(interaction) {
         });
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-        let fbStatus = "⚪ *Skipped*";
+        let metaStatus = "⚪ *Skipped*";
         let teleStatus = "⚪ *Skipped*";
         let discordStatus = "⚪ *Skipped*";
         let waStatus = "⚪ *Skipped*";
 
-        // 📘 Facebook
-        if (target === 'all' || target === 'facebook') {
-            if (process.env.FACEBOOK_PAGE_ID) {
-                const postId = await postToFacebook(imageBuffer, caption);
-                if (postId) {
-                    fbStatus = "✅ **Success**";
-                    await commentOnPost(postId, engagementComment);
-                } else fbStatus = "❌ **Failed**";
-            } else fbStatus = "⚠️ **No Config**";
+        // 📘 📸 🧵 META (FB, IG, THREADS)
+        if (target === 'all' || target === 'meta') {
+            if (process.env.META_ACCESS_TOKEN) {
+                const report = await postToMeta(imageBuffer, caption, engagementComment);
+                metaStatus = `FB: ${report.facebook}\nIG: ${report.instagram}\nThreads: ${report.threads}`;
+            } else metaStatus = "⚠️ **No Config**";
         }
 
         // ✈️ Telegram
@@ -146,7 +135,7 @@ async function execute(interaction) {
             } catch (e) { discordStatus = "❌ **Failed**"; }
         }
 
-        // --- RENDER EMBED REPORT ---
+        // --- RENDER REPORT EMBED ---
         const reportEmbed = new EmbedBuilder()
             .setColor('#b8256f')
             .setAuthor({ name: 'Manual Post Override', iconURL: interaction.client.user.displayAvatarURL() })
@@ -155,7 +144,7 @@ async function execute(interaction) {
             .addFields(
                 { name: '🎵 Song Info', value: `**${trackTitle}**\n${trackArtist}`, inline: false },
                 { name: '📊 Distribution Report', value: 
-                    `🔹 **Facebook:** ${fbStatus}\n` +
+                    `🔹 **Meta (Integrated):**\n${metaStatus}\n\n` +
                     `🔹 **Telegram:** ${teleStatus}\n` +
                     `🔹 **WhatsApp:** ${waStatus}\n` + 
                     `🔹 **Discord:** ${discordStatus}`, 

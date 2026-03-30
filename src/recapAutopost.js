@@ -8,7 +8,7 @@ import path from "path";
 import { fileURLToPath } from 'url';
 import { getTopSongs } from "./history.js";
 import { generateRecapImage } from "./recapGenerator.js";
-import { postToFacebook, commentOnPost } from "./facebook.js";
+import { postToMeta } from "./meta.js"; // 🌟 Versi Terpadu (FB, IG, Threads)
 import { postToTelegram } from "./telegram.js";
 
 dotenv.config();
@@ -26,14 +26,12 @@ async function getDynamicRecapText(label, topSong) {
     const plays = topSong.play_count || 0;
     const period = label.toLowerCase(); // weekly, monthly, yearly
 
-    // --- DEFINISIKAN TAGS KHUSUS RECAP ---
     const tags = "#MusicRecap #TopTracks #AlexiaFM #NowPlaying #ChartTopper #MusicDiscovery";
 
     let finalCaption = `📊 ALEXIA ${label} WRAPPED\nTop track: ${title} by ${artist} (${plays} plays)!\n\n${tags}`;
     let finalComment = `What's your favorite track this ${period}? 👇`;
 
     try {
-        // Baca file Captions
         const capPath = path.join(__dirname, '..', 'captions', 'recap.txt');
         const capRaw = await readFile(capPath, "utf-8");
         const capTemplates = capRaw.split(/---+/).map((t) => t.trim()).filter(Boolean);
@@ -45,9 +43,8 @@ async function getDynamicRecapText(label, topSong) {
             .replace(/{title}/g, title)
             .replace(/{artist}/g, artist)
             .replace(/{plays}/g, plays)
-            .replace(/{tags}/g, tags); // Replace tag di sini
+            .replace(/{tags}/g, tags);
 
-        // Baca file Comments
         const comPath = path.join(__dirname, '..', 'comments', 'recap.txt');
         const comRaw = await readFile(comPath, "utf-8");
         const comTemplates = comRaw.split(/---+/).map((t) => t.trim()).filter(Boolean);
@@ -88,25 +85,25 @@ export async function performRecapAutopost(client, period) {
         const imgBuffer = await generateRecapImage(label, songs);
         if (!imgBuffer) return false;
 
-        // Panggil helper buat baca file .txt
         const { caption, comment } = await getDynamicRecapText(label, songs[0]);
 
-        // --- FACEBOOK POSTING ---
-        if (process.env.FACEBOOK_PAGE_ID) {
-            postToFacebook(imgBuffer, caption).then(id => {
-                if (id) {
-                    console.log(`✅ FB Recap Posted: ${id}`);
-                    commentOnPost(id, comment);
-                }
-            }).catch(console.error);
+        // --- 📘 📸 🧵 META GROUP (FB, IG, THREADS) ---
+        if (process.env.META_ACCESS_TOKEN) {
+            try {
+                console.log(`📡 Sending ${label} Recap to Meta...`);
+                const metaReport = await postToMeta(imgBuffer, caption, comment);
+                console.log(`✅ Meta Recap Results -> FB: ${metaReport.facebook} | IG: ${metaReport.instagram} | Threads: ${metaReport.threads}`);
+            } catch (e) { 
+                console.error("❌ Meta Recap Error:", e.message); 
+            }
         }
 
-        // --- TELEGRAM POSTING ---
+        // --- ✈️ TELEGRAM POSTING ---
         if (process.env.TELEGRAM_BOT_TOKEN) {
             postToTelegram(imgBuffer, caption, comment).catch(console.error);
         }
 
-        // --- DISCORD POSTING ---
+        // --- 🟣 DISCORD POSTING ---
         const attachment = new AttachmentBuilder(imgBuffer, { name: 'recap.png' });
         const embed = new EmbedBuilder()
             .setColor('#FFD700')
@@ -117,6 +114,7 @@ export async function performRecapAutopost(client, period) {
             .setTimestamp();
 
         let count = 0;
+        // Gunakan iterator DB untuk kirim ke semua channel langganan
         for await (const [k, v] of db.iterator()) {
             if (k?.startsWith('sub:')) {
                 try {
@@ -125,7 +123,7 @@ export async function performRecapAutopost(client, period) {
                         await channel.send({ embeds: [embed], files: [attachment] });
                         count++;
                     }
-                } catch (e) { console.error(`Skip ${v}:`, e.message); }
+                } catch (e) { console.error(`Skip Discord ${v}:`, e.message); }
             }
         }
         
