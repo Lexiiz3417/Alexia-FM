@@ -153,34 +153,60 @@ export async function generateRecapImage(type, songs) {
         const rank = index + 2;
         const y = listStartTop + (index * itemSpacing); // Spacing x2
 
+        // Gambar Background Box List
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-        if (ctx.roundRect) { ctx.roundRect(160, y - 84, width - 320, 104, 20); } 
-        else { ctx.rect(160, y - 84, width - 320, 104); }
-        ctx.fill();
+        if (ctx.roundRect) { 
+            ctx.beginPath(); // Biasakan beginPath sebelum ngegambar shape
+            ctx.roundRect(160, y - 84, width - 320, 104, 20); 
+            ctx.fill();
+        } 
+        else { 
+            ctx.fillRect(160, y - 84, width - 320, 104); 
+        }
 
+        // Tulis Angka Ranking (Kiri)
         ctx.textAlign = 'left';
         ctx.fillStyle = rank === 2 ? accentColor : (rank === 3 ? '#C0C0C0' : '#ffffff');
         ctx.font = `bold 44px ${mainFont}`;
         ctx.fillText(`${rank}`, 220, y - 12);
 
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 36px ${mainFont}`;
-        const info = `${song.title || 'Unknown'} - ${song.artist || 'Unknown'}`;
-        
-        // 🌟 PERBAIKAN 2: Potong max 38 karakter biar gak nusuk angka PTS!
-        ctx.fillText(info.length > 40 ? info.substring(0, 38) + '...' : info, 320, y - 12);
-
+        // Tulis Angka PTS (Kanan) -> Kita gambar duluan biar tau sisa space buat teks lagu
         ctx.textAlign = 'right';
         ctx.fillStyle = accentColor;
         ctx.font = `bold 32px ${mainFont}`;
-        ctx.fillText(`${song.play_count || 0} PTS`, width - 220, y - 12);
+        const ptsText = `${song.play_count || 0} PTS`;
+        ctx.fillText(ptsText, width - 220, y - 12);
+
+        // 🌟 PERBAIKAN 2 (FINAL JUTSU): Pengukuran Lebar Pixel Presisi
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold 36px ${mainFont}`;
+        
+        let info = `${song.title || 'Unknown'} - ${song.artist || 'Unknown'}`;
+        
+        // Hitung batas aman lebar piksel buat judul lagu
+        // 320 = titik X awal judul, (width - 220) = titik X akhir (tempat PTS)
+        // 120 = padding extra biar gak nempel banget sama PTS
+        const maxTextWidth = (width - 220) - 320 - 120; 
+
+        // Cek apakah lebar tulisan nembus batas maxTextWidth
+        if (ctx.measureText(info).width > maxTextWidth) {
+            // Kalo nembus, potong huruf belakangnya satu-satu sampe muat
+            while (info.length > 0 && ctx.measureText(info + '...').width > maxTextWidth) {
+                info = info.substring(0, info.length - 1);
+            }
+            info += '...';
+        }
+
+        // Gambar teks yang udah dipotong presisi
+        ctx.fillText(info, 320, y - 12);
     });
 
     // --- 6. FOOTER WATERMARK ---
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = `italic 32px ${mainFont}`;
-    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 70); // Y-axis dinamis ngikutin tinggi canvas
+    ctx.fillText('powered by @alexiazaphyra', width / 2, height - 70);
 
-    return canvas.toBuffer();
+    return canvas.toBuffer('image/png'); // Tambahin 'image/png' biar buffer-nya jelas formatnya
 }
