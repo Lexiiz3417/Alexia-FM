@@ -1,28 +1,38 @@
 // src/commands/cleanhistory.js
-
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import sqlite3 from 'sqlite3';
-import path from 'path';
+import pg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
+
+const { Pool } = pg;
+
+// Establish connection to Supabase cloud database
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
 
 export default {
     data: new SlashCommandBuilder()
         .setName('cleanhistory')
-        .setDescription('OWNER ONLY: Hapus lagu spesifik dari database Recap (Aman & Presisi)')
+        .setDescription('OWNER ONLY: Delete a specific song from the Recap database (Safe & Precise)')
         .addStringOption(option =>
             option.setName('title')
-                .setDescription('Judul lagu PERSIS yang mau dihapus (Contoh: The Call)')
+                .setDescription('EXACT song title to delete (Example: The Call)')
                 .setRequired(true)
         )
         .addStringOption(option =>
             option.setName('artist')
-                .setDescription('Nama artis PERSIS (Opsional. Contoh: Release)')
+                .setDescription('EXACT artist name (Optional. Example: Release)')
                 .setRequired(false)
         ),
 
     async execute(interaction) {
         // --- 1. SECURITY CHECK ---
         if (interaction.user.id !== process.env.OWNER_ID) {
-            return interaction.reply({ content: '⛔ Akses Ditolak! Command ini eksklusif untuk CEO.', flags: ['Ephemeral'] });
+            return interaction.reply({ content: '⛔ Access Denied! This command is exclusive to the CEO.', flags: ['Ephemeral'] });
         }
 
         const exactTitle = interaction.options.getString('title');
@@ -30,63 +40,51 @@ export default {
         
         await interaction.deferReply({ flags: ['Ephemeral'] });
 
-        // --- 2. KONEKSI DATABASE ---
-        const dbPath = path.resolve(process.cwd(), 'data', 'db.sqlite');
-        const db = new sqlite3.Database(dbPath);
-
-        // Helper biar sqlite3 yang jadul bisa pake async/await
-        const getQuery = (query, params) => new Promise((resolve, reject) => {
-            db.get(query, params, (err, row) => err ? reject(err) : resolve(row));
-        });
-
-        const runQuery = (query, params) => new Promise((resolve, reject) => {
-            db.run(query, params, function(err) { err ? reject(err) : resolve(this.changes) });
-        });
-
         try {
             let countQuery, deleteQuery, params;
 
-            // --- 3. LOGIKA SNIPER (EXACT MATCH) ---
+            // --- 2. CLOUD SNIPER LOGIC (EXACT MATCH) ---
             if (exactArtist) {
-                // Hapus berdasarkan Judul + Artis
-                countQuery = `SELECT COUNT(*) as total FROM play_history WHERE title = ? AND artist = ?`;
-                deleteQuery = `DELETE FROM play_history WHERE title = ? AND artist = ?`;
+                // Delete based on Title + Artist
+                countQuery = `SELECT COUNT(*) as total FROM play_history WHERE title = $1 AND artist = $2`;
+                deleteQuery = `DELETE FROM play_history WHERE title = $1 AND artist = $2`;
                 params = [exactTitle, exactArtist];
             } else {
-                // Hapus berdasarkan Judul doang
-                countQuery = `SELECT COUNT(*) as total FROM play_history WHERE title = ?`;
-                deleteQuery = `DELETE FROM play_history WHERE title = ?`;
+                // Delete based on Title only
+                countQuery = `SELECT COUNT(*) as total FROM play_history WHERE title = $1`;
+                deleteQuery = `DELETE FROM play_history WHERE title = $1`;
                 params = [exactTitle];
             }
 
-            // Cek jumlah datanya dulu
-            const resultCount = await getQuery(countQuery, params);
+            // Check if data exists first
+            const resultCount = await pool.query(countQuery, params);
+            const total = parseInt(resultCount.rows[0].total, 10);
 
-            if (!resultCount || resultCount.total === 0) {
-                db.close();
+            if (total === 0) {
                 return interaction.editReply({ 
-                    content: `🔎 **Data tidak ditemukan!**\nTidak ada lagu dengan judul **"${exactTitle}"**${exactArtist ? ` oleh **"${exactArtist}"**` : ''} di database.` 
+                    content: `🔎 **Data not found!**\nNo play history found for **"${exactTitle}"**${exactArtist ? ` by **"${exactArtist}"**` : ''} in the cloud database.` 
                 });
             }
 
-            // Tarik pelatuk (Hapus Data)
-            const deletedRows = await runQuery(deleteQuery, params);
-            db.close();
+            // Pull the trigger (Delete Data)
+            const resultDelete = await pool.query(deleteQuery, params);
+            const deletedRows = resultDelete.rowCount;
 
-            // --- 4. RENDER HASIL ---
+            // --- 3. RENDER RESULT ---
             const embed = new EmbedBuilder()
-                .setColor('#2ecc71') // Hijau Success
+                .setColor('#2ecc71') // Green Success
                 .setTitle('🎯 Target Eliminated!')
-                .setDescription(`Berhasil menghapus **${deletedRows}** riwayat putaran untuk lagu:\n\n🎵 **${exactTitle}**\n🎤 ${exactArtist ? exactArtist : '(Semua artis dengan judul ini)'}`)
-                .setFooter({ text: 'Database Optimized • Clean History' })
+                .setDescription(`Successfully deleted **${deletedRows}** play records for:\n\n🎵 **${exactTitle}**\n🎤 ${exactArtist ? exactArtist : '(All artists with this title)'}`)
+                .setFooter({ text: 'Cloud Database Optimized • Clean History' })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
 
+            console.log(`🧹 [Supabase] Cleaned ${deletedRows} records for: ${exactTitle} ${exactArtist ? `- ${exactArtist}` : ''}`);
+
         } catch (error) {
-            console.error("❌ Clean History Error:", error);
-            db.close();
-            await interaction.editReply({ content: `❌ Gagal membersihkan DB: ${error.message}` });
+            console.error("❌ [Supabase] Clean History Error:", error);
+            await interaction.editReply({ content: `❌ Failed to clean cloud database: ${error.message}` });
         }
     }
 };

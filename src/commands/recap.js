@@ -6,7 +6,7 @@ import { generateRecapImage } from '../recapGenerator.js';
 import Keyv from 'keyv';
 
 // Inisialisasi database cooldown
-const db = new Keyv('sqlite://data/db.sqlite', { namespace: 'cooldown_recap' });
+const db = new Keyv({ namespace: 'cooldown_recap' });
 
 export default {
     data: new SlashCommandBuilder()

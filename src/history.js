@@ -1,85 +1,81 @@
 // src/history.js
+import pg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
 
-import sqlite3 from 'sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
+const { Pool } = pg;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Pastikan folder 'data' ada supaya gak error saat bikin database
-const dataDir = path.resolve(__dirname, '../data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir);
-}
-
-// Sesuaikan dengan path yang dipakai Keyv biar satu rumah
-const dbPath = path.resolve(dataDir, 'db.sqlite');
-
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('❌ Gagal konek ke database History:', err.message);
-    } else {
-        console.log('✅ SQLite terhubung untuk fitur Alexia Wrapped.');
+// Establish connection to Supabase using the connection string from .env
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false // Required for connecting to Supabase cloud servers
     }
 });
 
-// Bikin tabel play_history kalau belum ada
-db.serialize(() => {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS play_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            artist TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            source TEXT NOT NULL,
-            played_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+// Automatically create the history table if it doesn't exist upon startup
+// Matches the exact schema from the old SQLite version
+pool.query(`
+    CREATE TABLE IF NOT EXISTS play_history (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        artist TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        played_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+`).then(() => {
+    console.log("✅ [Supabase] Database connected & Table ready!");
+}).catch(err => {
+    console.error("❌ [Supabase] Failed to initialize table:", err);
 });
 
 /**
- * Fungsi buat nyatet history lagu
+ * Log the currently playing track into the cloud database
+ * @param {string} title - The title of the track
+ * @param {string} artist - The artist of the track
+ * @param {string} userId - The ID of the user who requested the track
+ * @param {string} source - The source platform of the track (e.g., youtube, spotify)
  */
-export function logPlayHistory(title, artist, userId, source) {
+export async function logPlayHistory(title, artist, userId, source) {
     const safeTitle = title ? title.trim() : 'Unknown Title';
     const safeArtist = artist ? artist.trim() : 'Unknown Artist';
     const safeUserId = userId ? userId : 'SYSTEM';
     const safeSource = source ? source : 'unknown';
 
-    const query = `INSERT INTO play_history (title, artist, user_id, source) VALUES (?, ?, ?, ?)`;
+    const query = `INSERT INTO play_history (title, artist, user_id, source) VALUES ($1, $2, $3, $4)`;
     
-    db.run(query, [safeTitle, safeArtist, safeUserId, safeSource], function(err) {
-        if (err) {
-            console.error('❌ Gagal nyatet history:', err.message);
-        } else {
-            // Uncomment kalau mau liat log di console tiap kali lagu tercatat
-            // console.log(`📝 [HISTORY LOG] Tercatat: ${safeTitle} - ${safeArtist}`);
-        }
-    });
+    try {
+        await pool.query(query, [safeTitle, safeArtist, safeUserId, safeSource]);
+        // Uncomment to see logs in console every time a song is recorded
+        // console.log(`☁️ [Supabase] Logged: ${safeTitle} - ${safeArtist}`);
+    } catch (error) {
+        console.error("❌ [Supabase] Failed to log track to database:", error);
+    }
 }
 
 /**
- * Fungsi buat narik Top Songs (Weekly/Monthly/Yearly)
+ * Retrieve the most played songs for a specific timeframe (Weekly/Monthly/Yearly)
+ * @param {number} days - Number of days to look back
+ * @param {number} limit - Maximum number of tracks to return
+ * @returns {Promise<Array>} Array of song objects with play_count
  */
-export function getTopSongs(days, limit) {
-    return new Promise((resolve, reject) => {
+export async function getTopSongs(days, limit) {
+    try {
+        // Casting COUNT(*) to INTEGER is crucial for Canvas rendering logic
         const query = `
-            SELECT title, artist, COUNT(*) as play_count 
+            SELECT title, artist, CAST(COUNT(*) AS INTEGER) as play_count 
             FROM play_history 
-            WHERE played_at >= date('now', '-' || ? || ' days')
+            WHERE played_at >= NOW() - $1::INTERVAL 
             GROUP BY title, artist 
-            ORDER BY play_count DESC, played_at DESC
-            LIMIT ?
+            ORDER BY play_count DESC, MAX(played_at) DESC 
+            LIMIT $2
         `;
 
-        db.all(query, [days, limit], (err, rows) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(rows);
-            }
-        });
-    });
+        const result = await pool.query(query, [`${days} days`, limit]);
+        return result.rows;
+    } catch (error) {
+        console.error(`❌ [Supabase] Failed to fetch top songs for the last ${days} days:`, error);
+        return [];
+    }
 }
