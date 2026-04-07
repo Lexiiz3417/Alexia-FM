@@ -6,7 +6,7 @@ import { KeyvPostgres } from '@keyv/postgres';
 import { getPlaylistTracks } from "./ytmusic.js";
 import { getOdesliData } from "./songlink.js";
 import { generateCaption } from "./caption.js";
-import { postToMeta } from "./meta.js"; // 🌟 Versi Terpadu (FB, IG, Threads)
+import { postToMeta } from "./meta.js"; 
 import { sendAutoPostEmbed, updateBotPresence } from "./discord.js";
 import { generateNowPlayingImage } from './imageProcessor.js'; 
 import { getRandomComment } from './commentGenerator.js'; 
@@ -28,7 +28,7 @@ const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
 const HISTORY_LIMIT = 50; 
 
 /**
- * 🔄 Logika Pengambilan Lagu (Shuffle & Anti-Repeat)
+ * 🔄 Track retrieval logic with shuffle and anti-repeat mechanism
  */
 async function getNextTrack() {
     let shuffledPlaylist = await db.get('shuffled_playlist');
@@ -71,7 +71,7 @@ async function getNextTrack() {
 }
 
 /**
- * 🚀 FUNGSI UTAMA AUTOPOST (DAILY 12:00 PM)
+ * 🚀 MAIN AUTOPOST FUNCTION (DAILY 12:00 PM)
  */
 export async function performAutopost(client) {
     try {
@@ -81,38 +81,41 @@ export async function performAutopost(client) {
         const diffTime = Math.abs(today - START_DATE);
         const dayNumber = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
         
+        // 1. Get track with full metadata from YouTube Music
         const initialTrack = await getNextTrack();
         if (!initialTrack) return console.error("❌ Failed to get next track.");
         
+        // 2. Fetch streaming links
         const odesliData = await getOdesliData(initialTrack.url);
         if (!odesliData) return console.error("❌ Failed to fetch Odesli data.");
 
-        let trackTitle = odesliData.title;
-        let trackArtist = odesliData.artist;
-        let trackCover = odesliData.imageUrl;
+        // 🌟 FIX: Prioritize YouTube's complete artist list!
+        let trackTitle = odesliData.title || initialTrack.name;
+        let trackArtist = initialTrack.artist || odesliData.artist; // 👈 Safe from Odesli's truncation
+        let trackCover = odesliData.imageUrl || initialTrack.image;
 
-        // 1. REFINEMENT METADATA (HD Cover & Clean Text)
+        // 3. REFINEMENT METADATA (HD Cover & Clean Text)
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
         if (hdInfo) {
             trackTitle = hdInfo.title || trackTitle;        
             trackArtist = hdInfo.artist || trackArtist;      
             if (hdInfo.coverUrl) trackCover = hdInfo.coverUrl;
-            console.log(`✅ Refined via API: ${trackTitle}`);
+            console.log(`✅ Refined via API: ${trackTitle} - ${trackArtist}`);
         } else {
             const cleaned = cleanMetadata(trackTitle, trackArtist);
             trackTitle = cleaned.cleanTitle || trackTitle;
             trackArtist = cleaned.cleanArtist || trackArtist;
         }
 
-        // 2. DISCORD PRESENCE UPDATE
+        // 4. DISCORD PRESENCE UPDATE
         if (client) await updateBotPresence(client, { name: trackTitle, artist: trackArtist });
 
-        // 3. IMAGE GENERATION (Render 2K Image)
+        // 5. IMAGE GENERATION (Render 2K Image)
         const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
         const imageBuffer = await generateNowPlayingImage(songObj, dayNumber);
         if (!imageBuffer) return console.error("❌ Failed to render image.");
 
-        // 4. CAPTION & COMMENT PREPARATION
+        // 6. CAPTION & COMMENT PREPARATION
         const caption = await generateCaption({ 
             day: dayNumber, 
             title: trackTitle, 
@@ -121,7 +124,7 @@ export async function performAutopost(client) {
         });
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
-        // --- 🚀 DISTRIBUSI MULTI-PLATFORM ---
+        // --- 🚀 MULTI-PLATFORM DISTRIBUTION ---
 
         // 📘 📸 🧵 A. META ECOSYSTEM (FB, IG, THREADS)
         if (process.env.META_ACCESS_TOKEN) {
@@ -140,12 +143,12 @@ export async function performAutopost(client) {
             } catch (e) { console.error("❌ Telegram Error:", e.message); }
         }
 
-        // 🟢 C. WHATSAPP CEO (6285163133417)
+        // 🟢 C. WHATSAPP BROADCAST (STATUS)
         try {
             const myWaNumber = "6285163133417@s.whatsapp.net"; 
             const waCaption = `${caption}\n\n💬 ${engagementComment}`;
             await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
-            console.log("✅ Sent to WhatsApp CEO.");
+            console.log("✅ Sent to WhatsApp Status.");
         } catch (e) { console.error("❌ WA Error:", e.message); }
 
         // 🟣 D. DISCORD CHANNELS (Subscribers)
@@ -166,7 +169,7 @@ export async function performAutopost(client) {
             }
         }
         
-        // 5. LOG HISTORY
+        // 7. LOG HISTORY
         logPlayHistory(trackTitle, trackArtist, 'AUTOPOST', 'autopost', trackCover);
         console.log(`🏁 [DAY #${dayNumber}] ALL SYSTEMS GO! MISSION ACCOMPLISHED.`);
         return true;

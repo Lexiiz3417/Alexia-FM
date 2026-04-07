@@ -29,9 +29,9 @@ const data = new SlashCommandBuilder()
             .addChoices(
                 { name: '🌐 Semua Platform (All)', value: 'all' },
                 { name: '📸 Meta (FB, IG, Threads)', value: 'meta' },
-                { name: '✈️ Telegram Saja', value: 'telegram' },
-                { name: '👾 Discord Saja', value: 'discord' },
-                { name: '🟢 WhatsApp Saja', value: 'whatsapp' } 
+                { name: '✈️ Telegram', value: 'telegram' },
+                { name: '👾 Discord', value: 'discord' },
+                { name: '🟢 WhatsApp', value: 'whatsapp' } 
             ));
 
 async function execute(interaction) {
