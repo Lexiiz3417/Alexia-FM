@@ -10,7 +10,7 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// 🌟 UPGRADE TABEL: Tambahin kolom 'cover_url'
+// Initialize table with cover_url support
 pool.query(`
     CREATE TABLE IF NOT EXISTS play_history (
         id SERIAL PRIMARY KEY,
@@ -28,30 +28,40 @@ pool.query(`
 });
 
 /**
- * Log the currently playing track with its original cover
+ * Log the currently playing track and perform auto-cleanup for old records
  */
 export async function logPlayHistory(title, artist, userId, source, coverUrl) {
     const safeTitle = title ? title.trim() : 'Unknown Title';
     const safeArtist = artist ? artist.trim() : 'Unknown Artist';
     const safeUserId = userId ? userId : 'SYSTEM';
     const safeSource = source ? source : 'unknown';
-    const safeCover = coverUrl ? coverUrl : null; // 👈 Nyawa cadangan disimpan di sini
+    const safeCover = coverUrl ? coverUrl : null; 
 
-    const query = `INSERT INTO play_history (title, artist, user_id, source, cover_url) VALUES ($1, $2, $3, $4, $5)`;
+    const insertQuery = `INSERT INTO play_history (title, artist, user_id, source, cover_url) VALUES ($1, $2, $3, $4, $5)`;
+    const cleanQuery = `DELETE FROM play_history WHERE played_at < NOW() - INTERVAL '1 year'`;
     
     try {
-        await pool.query(query, [safeTitle, safeArtist, safeUserId, safeSource, safeCover]);
+        // 1. Insert new log
+        await pool.query(insertQuery, [safeTitle, safeArtist, safeUserId, safeSource, safeCover]);
+        
+        // 2. Execute auto-cleanup
+        const cleanResult = await pool.query(cleanQuery);
+        
+        // Log cleanup result if rows were deleted
+        if (cleanResult.rowCount > 0) {
+            console.log(`🧹 [Supabase] Auto-Clean: Deleted ${cleanResult.rowCount} old records (> 1 Year).`);
+        }
+        
     } catch (error) {
-        console.error("❌ [Supabase] Failed to log track to database:", error);
+        console.error("❌ [Supabase] Failed to log track/clean database:", error);
     }
 }
 
 /**
- * Retrieve the most played songs + cover_url terbaru
+ * Retrieve the most played songs
  */
 export async function getTopSongs(days, limit) {
     try {
-        // Kita ambil MAX(cover_url) biar dapet URL gambar terakhir yang tercatat
         const query = `
             SELECT 
                 title, 

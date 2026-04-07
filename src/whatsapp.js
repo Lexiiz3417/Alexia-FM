@@ -4,7 +4,7 @@ import pino from 'pino';
 import { usePostgresAuthState } from './waAuthState.js'; 
 
 export let waSocket = null;
-export let waContacts = []; 
+export let waContacts = []; // Store saved contacts for status broadcast
 
 export async function startWhatsAppBot() {
     const { state, saveCreds } = await usePostgresAuthState();
@@ -29,7 +29,7 @@ export async function startWhatsAppBot() {
                 const code = await sock.requestPairingCode(phoneNumber);
                 console.log(`\n🔑 [WHATSAPP PAIRING CODE]: ${code.match(/.{1,4}/g).join('-')}\n`);
                 console.log(`👉 Open WA on Phone -> Linked Devices -> Link with phone number instead`);
-                console.log(`👉 Enter the code above, CEO!\n`);
+                console.log(`👉 Enter the code above!\n`);
             } catch (err) {
                 console.error("❌ Failed to generate pairing code:", err.message);
             }
@@ -48,28 +48,32 @@ export async function startWhatsAppBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Capture incoming contacts for status viewers
     sock.ev.on('contacts.upsert', (contacts) => {
         const newContacts = contacts
             .map(c => c.id)
-            .filter(id => id && id.endsWith('@s.whatsapp.net')); // Cuma ambil nomor HP pribadi
+            .filter(id => id && id.endsWith('@s.whatsapp.net'));
         
-        // Gabungin kontak baru ke buku telepon tanpa duplikat
         waContacts = [...new Set([...waContacts, ...newContacts])];
-        console.log(`📇 [Buku Telepon] Berhasil memuat/update ${waContacts.length} kontak untuk penonton SW!`);
+        console.log(`📇 [Contact Sync] Loaded ${waContacts.length} contacts for status broadcast.`);
     });
 }
 
+/**
+ * 🟢 Send to WhatsApp Status (Broadcast to all loaded contacts)
+ */
 export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
     if (!waSocket) return;
     try {
         const statusJid = 'status@broadcast'; 
         const botJid = waSocket.user.id.split(':')[0] + '@s.whatsapp.net'; 
         
+        // Combine target, bot, and all synced contacts without duplicates
         const viewers = [...new Set([targetJid, botJid, ...waContacts])]; 
 
         const messageOptions = { 
             statusJidList: viewers,
-            broadcast: true // WAJIB ADA BIAR JADI STATUS!
+            broadcast: true 
         };
 
         if (imageBuffer) {
@@ -77,7 +81,7 @@ export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
         } else {
             await waSocket.sendMessage(statusJid, { text: text, backgroundColor: '#b8256f' }, messageOptions);
         }
-        console.log(`🟢 ✅ Sukses post ke WA Status! Berpotensi dilihat oleh ${viewers.length} kontak.`);
+        console.log(`🟢 ✅ Successfully posted to WhatsApp Status! Potential viewers: ${viewers.length}`);
     } catch (error) {
         console.error("❌ Failed to post to WA Status:", error);
     }
