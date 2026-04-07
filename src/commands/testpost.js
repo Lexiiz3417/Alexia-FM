@@ -1,6 +1,4 @@
-// src/commands/testpost.js
-
-import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import Keyv from 'keyv';
 import { KeyvPostgres } from '@keyv/postgres';
 import { getPlaylistTracks } from '../ytmusic.js';
@@ -9,7 +7,7 @@ import { generateCaption } from '../caption.js';
 import { updateBotPresence, sendAutoPostEmbed } from '../discord.js'; 
 import { generateNowPlayingImage } from '../imageProcessor.js';
 import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; 
-import { postToMeta } from '../meta.js'; // 🌟 Gunakan Meta Terpadu
+import { postToMeta } from '../meta.js'; 
 import { getRandomComment } from '../commentGenerator.js'; 
 import { postToTelegram } from '../telegram.js'; 
 import { logPlayHistory } from '../history.js'; 
@@ -58,23 +56,18 @@ export default {
             await interaction.deferReply(); 
 
             const savedChannelId = await db.get(`sub:${interaction.guildId}`);
-            if (!savedChannelId && !['telegram', 'meta', 'whatsapp'].includes(target)) {
-                return interaction.editReply({ 
-                    content: '❌ **Error:** No Discord channel set. Run `/setchannel` first.' 
-                });
-            }
-
             const initialTrack = await getRandomTrack();
             if (!initialTrack) return interaction.editReply({ content: '❌ Failed to fetch track.' });
 
             const odesliData = await getOdesliData(initialTrack.url);
             if (!odesliData) return interaction.editReply({ content: '❌ Failed to fetch Odesli.' });
             
-            let trackTitle = odesliData.title;
-            let trackArtist = odesliData.artist;
-            let trackCover = odesliData.imageUrl;
+            // 🌟 METADATA PRIORITY: Keep YouTube's complete artist list!
+            let trackTitle = odesliData.title || initialTrack.name;
+            let trackArtist = initialTrack.artist || odesliData.artist; 
+            let trackCover = odesliData.imageUrl || initialTrack.image;
 
-            // 1. REFINEMENT METADATA
+            // 1. REFINEMENT METADATA (HD Cover & Clean Text)
             const hdInfo = await getTrackInfo(trackTitle, trackArtist);
             if (hdInfo) {
                 trackTitle = hdInfo.title || trackTitle;
@@ -86,21 +79,19 @@ export default {
                 trackArtist = cleaned.cleanArtist || trackArtist;
             }
 
-            const finalTrack = { name: trackTitle, artist: trackArtist };
-            if (interaction.client) updateBotPresence(interaction.client, finalTrack); 
+            if (interaction.client) updateBotPresence(interaction.client, { name: trackTitle, artist: trackArtist }); 
 
             const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
             const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
-            const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
-
             // 2. GENERATE IMAGE
+            const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
             const imageBuffer = await generateNowPlayingImage(songObj, `TEST DAY #${dayNumber}`);
             if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
             logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'testpost', trackCover);
 
-            // 3. GENERATE CAPTION
+            // 3. GENERATE CAPTION & COMMENT
             const caption = await generateCaption({ day: dayNumber, title: trackTitle, artist: trackArtist, link: odesliData.pageUrl });
             const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
@@ -109,7 +100,9 @@ export default {
             let teleStatus = "⚪ *Skipped*";
             let waStatus = "⚪ *Skipped*";
 
-            // A. META (FACEBOOK, INSTAGRAM, THREADS)
+            // --- 🚀 MULTI-PLATFORM DISPATCH ---
+
+            // A. META (FB, IG, THREADS)
             if (target === 'all' || target === 'meta') {
                 if (process.env.META_ACCESS_TOKEN) {
                     const report = await postToMeta(imageBuffer, caption, engagementComment);
@@ -125,14 +118,26 @@ export default {
                 } else teleStatus = "⚠️ **No Config**";
             }
 
-            // C. WHATSAPP
+            // C. WHATSAPP (Japri CEO & Registered Group)
             if (target === 'all' || target === 'whatsapp') {
                 try {
-                    const myWaNumber = "6285163133417@s.whatsapp.net";
                     const waCaption = `${caption}\n\n💬 ${engagementComment}`;
+                    
+                    // 1. Report to CEO (Log)
+                    const myWaNumber = "6285163133417@s.whatsapp.net";
                     await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
-                    waStatus = "✅ **Sent to CEO**";
-                } catch (e) { waStatus = `❌ **Error:** ${e.message}`; }
+
+                    // 2. Fetch & Send to Registered Group from Database
+                    const registeredGroupId = await db.get('wa_target_group');
+                    if (registeredGroupId) {
+                        await sendWhatsAppPost(registeredGroupId, waCaption, imageBuffer);
+                        waStatus = "✅ **Sent to CEO & Group**";
+                    } else {
+                        waStatus = "✅ **Sent to CEO** (No group registered)";
+                    }
+                } catch (e) { 
+                    waStatus = `❌ **Error:** ${e.message}`; 
+                }
             }
 
             // D. DISCORD
@@ -150,28 +155,28 @@ export default {
                 } catch (err) { discordStatus = `❌ **Error:** ${err.message}`; }
             }
 
-            // --- 5. RENDER LAPORAN TEST ---
+            // --- 4. RENDER REPORT ---
             const reportEmbed = new EmbedBuilder()
                 .setColor('#2ecc71')
-                .setAuthor({ name: 'System Simulation', iconURL: interaction.client.user.displayAvatarURL() })
-                .setTitle(`🧪 Autopost Test Complete: Day #${dayNumber}`)
+                .setAuthor({ name: 'Alexia Simulation', iconURL: interaction.client.user.displayAvatarURL() })
+                .setTitle(`🧪 Simulation Complete: Day #${dayNumber}`)
                 .setDescription(`Simulated a multi-platform post for **${trackTitle}**.`)
                 .addFields(
-                    { name: '🎵 Song Information', value: `**${trackTitle}** by ${trackArtist}`, inline: false },
+                    { name: '🎵 Track', value: `**${trackTitle}**\n${trackArtist}`, inline: false },
                     { name: '🔹 Meta (FB, IG, Threads)', value: metaStatus, inline: false },
-                    { name: '🔹 Discord Status', value: discordStatus, inline: true },
-                    { name: '🔹 Telegram Status', value: teleStatus, inline: true },
-                    { name: '🟢 WhatsApp Status', value: waStatus, inline: true }
+                    { name: '🔹 Discord', value: discordStatus, inline: true },
+                    { name: '🔹 Telegram', value: teleStatus, inline: true },
+                    { name: '🟢 WhatsApp', value: waStatus, inline: true }
                 )
                 .setThumbnail(trackCover)
-                .setFooter({ text: `Admin: ${interaction.user.username} • All Systems Tested`, iconURL: interaction.user.displayAvatarURL() })
+                .setFooter({ text: `Testing Mode • Metadata & Group Sync Active` })
                 .setTimestamp();
             
             await interaction.editReply({ embeds: [reportEmbed] });
 
         } catch (error) {
             console.error("❌ TestPost Error:", error);
-            if (interaction.deferred) await interaction.editReply({ content: '❌ **Simulation Failed:** Check terminal for details.' });
+            if (interaction.deferred) await interaction.editReply({ content: '❌ **Simulation Failed:** Check terminal logs.' });
         }
     }
 };
