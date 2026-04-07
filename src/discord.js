@@ -28,6 +28,7 @@ export async function startDiscordBot() {
   const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
   const commands = [];
 
+  // Initialize and load commands from the /commands directory
   for (const file of commandFiles) {
       const filePath = path.join(commandsPath, file);
       const fileUrl = pathToFileURL(filePath).href; 
@@ -40,6 +41,7 @@ export async function startDiscordBot() {
       }
   }
 
+  // Register Global Slash Commands
   const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
   try {
@@ -53,6 +55,7 @@ export async function startDiscordBot() {
       console.error(error);
   }
 
+  // Event: Client Online with Initial Presence
   client.once(Events.ClientReady, c => {
       console.log(`🎧 DJ ${c.user.tag} is ready to serve!`);
       c.user.setPresence({
@@ -64,7 +67,10 @@ export async function startDiscordBot() {
       });
   });
 
-  // 🛡️ REVISI: STRATEGI FAST DEFER
+  /**
+   * 🛡️ FAST DEFER STRATEGY
+   * We trigger deferReply() immediately to prevent the 3-second timeout (Error 10062).
+   */
   client.on(Events.InteractionCreate, async interaction => {
       if (!interaction.isChatInputCommand()) return;
 
@@ -72,10 +78,10 @@ export async function startDiscordBot() {
       if (!command) return;
 
       try {
-          // 🚀 LANGSUNG DEFER DI SINI (Sebelum execute)
-          // Ini memastikan Discord dapet respon dalam < 3 detik
+          // Acknowledge the interaction instantly
           await interaction.deferReply();
 
+          // Execute command logic
           await command.execute(interaction);
       } catch (error) {
           console.error("❌ Interaction Error:", error);
@@ -94,6 +100,9 @@ export async function startDiscordBot() {
   return client;
 }
 
+/**
+ * Sends a stylized music embed to a specific Discord channel
+ */
 export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, imageBuffer, channelId }) {
   try {
       const channel = await client.channels.fetch(channelId);
@@ -121,6 +130,9 @@ export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, im
   }
 }
 
+/**
+ * Updates bot presence to show current playing track
+ */
 export async function updateBotPresence(client, track) {
   if (!client.user || !track) return;
   try {

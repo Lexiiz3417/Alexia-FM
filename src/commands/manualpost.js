@@ -1,64 +1,76 @@
 // src/commands/manualpost.js
 
 import { SlashCommandBuilder, AttachmentBuilder, EmbedBuilder } from 'discord.js';
+import Keyv from 'keyv';
+import { KeyvPostgres } from '@keyv/postgres';
 import { getOdesliData } from '../songlink.js';
 import { generateNowPlayingImage } from '../imageProcessor.js';
 import { getTrackInfo, cleanMetadata } from '../coverFinder.js'; 
 import { generateCaption } from '../caption.js';
 import { getRandomComment } from '../commentGenerator.js';
-import { postToMeta } from '../meta.js'; // 🌟 Gunakan Meta Terpadu
+import { postToMeta } from '../meta.js'; 
 import { postToTelegram } from '../telegram.js';
 import { logPlayHistory } from '../history.js'; 
 import { sendWhatsAppPost } from '../whatsapp.js'; 
 
+// Initialize DB for WhatsApp Target Group retrieval
+const db = new Keyv({
+    store: new KeyvPostgres({
+        uri: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+    })
+});
+
 const data = new SlashCommandBuilder()
     .setName('manualpost')
-    .setDescription('Post manual untuk menambal Day # yang bolong (OWNER ONLY)')
+    .setDescription('Manually post a song to fill gaps in the Day # counter (OWNER ONLY)')
     .addStringOption(option =>
         option.setName('url')
-            .setDescription('Link lagu (YouTube/Spotify/Apple Music)')
+            .setDescription('Song link (YouTube/Spotify/Apple Music)')
             .setRequired(true))
     .addIntegerOption(option =>
         option.setName('day')
-            .setDescription('Nomor Day yang ingin dipost (contoh: 46)')
+            .setDescription('The Day number to post (e.g., 46)')
             .setRequired(true))
     .addStringOption(option =>
         option.setName('target')
-            .setDescription('Platform tujuan posting (Default: All)')
+            .setDescription('Target platform (Default: All)')
             .setRequired(false) 
             .addChoices(
-                { name: '🌐 Semua Platform (All)', value: 'all' },
-                { name: '📸 Meta (FB, IG, Threads)', value: 'meta' },
-                { name: '✈️ Telegram', value: 'telegram' },
-                { name: '👾 Discord', value: 'discord' },
-                { name: '🟢 WhatsApp', value: 'whatsapp' } 
+                { name: '🌐 All Platforms', value: 'all' },
+                { name: '📸 Meta Ecosystem', value: 'meta' },
+                { name: '✈️ Telegram Channel', value: 'telegram' },
+                { name: '👾 Discord Server', value: 'discord' },
+                { name: '🟢 WhatsApp Broadcast', value: 'whatsapp' } 
             ));
 
 async function execute(interaction) {
     const OWNER_ID = process.env.OWNER_ID; 
 
+    // Security Check
     if (interaction.user.id !== OWNER_ID) {
-        return interaction.reply({ 
-            content: '⛔ **Akses Ditolak!** Command ini eksklusif cuma bisa dipakai sama Owner bot.', 
+        return interaction.editReply({ 
+            content: '⛔ **Access Denied.** This command is restricted to the bot owner.', 
             flags: ['Ephemeral'] 
         });
     }
 
-    await interaction.deferReply({ flags: ['Ephemeral'] }); 
+    // NOTE: deferReply() is handled globally in src/discord.js
 
     const url = interaction.options.getString('url');
     const day = interaction.options.getInteger('day');
     const target = interaction.options.getString('target') || 'all'; 
 
     try {
+        // Fetch metadata via Odesli
         const odesliData = await getOdesliData(url);
-        if (!odesliData) return interaction.editReply("❌ Gagal mengambil metadata lagu.");
+        if (!odesliData) return interaction.editReply("❌ Failed to retrieve song metadata.");
 
         let trackTitle = odesliData.title;
         let trackArtist = odesliData.artist;
         let trackCover = odesliData.imageUrl;
 
-        // 🌟 REFINEMENT METADATA
+        // Refine metadata with high-res cover and clean text
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
         if (hdInfo) {
             trackTitle = hdInfo.title || trackTitle;
@@ -70,12 +82,14 @@ async function execute(interaction) {
             trackArtist = cleaned.cleanArtist || trackArtist;
         }
 
+        // Render Canvas Image
         const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
         const imageBuffer = await generateNowPlayingImage(songObj, day);
-        if (!imageBuffer) return interaction.editReply("❌ Gagal merender gambar canvas.");
+        if (!imageBuffer) return interaction.editReply("❌ Failed to render canvas image.");
 
         logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'manualpost', trackCover);
 
+        // Prepare Caption and Random Engagement Comment
         const caption = await generateCaption({
             day: day,
             title: trackTitle,
@@ -89,7 +103,7 @@ async function execute(interaction) {
         let discordStatus = "⚪ *Skipped*";
         let waStatus = "⚪ *Skipped*";
 
-        // 📘 📸 🧵 META (FB, IG, THREADS)
+        // Dispatch: Meta Ecosystem
         if (target === 'all' || target === 'meta') {
             if (process.env.META_ACCESS_TOKEN) {
                 const report = await postToMeta(imageBuffer, caption, engagementComment);
@@ -97,7 +111,7 @@ async function execute(interaction) {
             } else metaStatus = "⚠️ **No Config**";
         }
 
-        // ✈️ Telegram
+        // Dispatch: Telegram
         if (target === 'all' || target === 'telegram') {
             if (process.env.TELEGRAM_BOT_TOKEN) {
                 try {
@@ -107,17 +121,27 @@ async function execute(interaction) {
             } else teleStatus = "⚠️ **No Config**";
         }
 
-        // 🟢 WhatsApp
+        // Dispatch: WhatsApp (Sync with registered group)
         if (target === 'all' || target === 'whatsapp') {
             try {
-                const myWaNumber = "6285163133417@s.whatsapp.net";
                 const waCaption = `${caption}\n\n💬 ${engagementComment}`;
+                const myWaNumber = "6285163133417@s.whatsapp.net";
+                
+                // Direct Message to CEO
                 await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
-                waStatus = "✅ **Sent to CEO**";
+
+                // Registered Group Broadcast
+                const registeredGroupId = await db.get('wa_target_group');
+                if (registeredGroupId) {
+                    await sendWhatsAppPost(registeredGroupId, waCaption, imageBuffer);
+                    waStatus = "✅ **Sent to CEO & Group**";
+                } else {
+                    waStatus = "✅ **Sent to CEO** (Group not set)";
+                }
             } catch (e) { waStatus = `❌ **Error:** ${e.message}`; }
         }
 
-        // 👾 Discord
+        // Dispatch: Discord Local Channel
         if (target === 'all' || target === 'discord') {
             try {
                 const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
@@ -135,7 +159,7 @@ async function execute(interaction) {
             } catch (e) { discordStatus = "❌ **Failed**"; }
         }
 
-        // --- RENDER REPORT EMBED ---
+        // Send Final Report Embed
         const reportEmbed = new EmbedBuilder()
             .setColor('#b8256f')
             .setAuthor({ name: 'Manual Post Override', iconURL: interaction.client.user.displayAvatarURL() })
@@ -144,21 +168,21 @@ async function execute(interaction) {
             .addFields(
                 { name: '🎵 Song Info', value: `**${trackTitle}**\n${trackArtist}`, inline: false },
                 { name: '📊 Distribution Report', value: 
-                    `🔹 **Meta (Integrated):**\n${metaStatus}\n\n` +
+                    `🔹 **Meta:**\n${metaStatus}\n\n` +
                     `🔹 **Telegram:** ${teleStatus}\n` +
                     `🔹 **WhatsApp:** ${waStatus}\n` + 
                     `🔹 **Discord:** ${discordStatus}`, 
                   inline: false 
                 }
             )
-            .setFooter({ text: `Manual Log Recorded • Executed by ${interaction.user.username}` })
+            .setFooter({ text: `Manual Log Recorded • Executor: ${interaction.user.username}` })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [reportEmbed] });
 
     } catch (error) {
         console.error("❌ Manual Post Error:", error);
-        if (interaction.deferred) await interaction.editReply("❌ Kesalahan fatal saat memproses manual post.");
+        await interaction.editReply("❌ Fatal error during manual post processing.").catch(() => {});
     }
 }
 
