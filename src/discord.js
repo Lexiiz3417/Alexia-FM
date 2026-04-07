@@ -18,9 +18,6 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * 1. FUNGSI UTAMA: MENYALAKAN BOT (STARTUP)
- */
 export async function startDiscordBot() {
   const client = new Client({ 
       intents: [GatewayIntentBits.Guilds] 
@@ -31,12 +28,10 @@ export async function startDiscordBot() {
   const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
   const commands = [];
 
-  // Load semua command dari folder /commands
   for (const file of commandFiles) {
       const filePath = path.join(commandsPath, file);
       const fileUrl = pathToFileURL(filePath).href; 
       const commandModule = await import(fileUrl);
-      
       const command = commandModule.default;
       
       if (command && 'data' in command && 'execute' in command) {
@@ -45,7 +40,6 @@ export async function startDiscordBot() {
       }
   }
 
-  // Register Slash Commands
   const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
   try {
@@ -59,11 +53,8 @@ export async function startDiscordBot() {
       console.error(error);
   }
 
-  // 🎧 Event saat Bot Online (DENGAN INITIAL STATUS)
   client.once(Events.ClientReady, c => {
       console.log(`🎧 DJ ${c.user.tag} is ready to serve!`);
-      
-      // Pasang status awal biar gak bengong pas baru login
       c.user.setPresence({
         activities: [{ 
             name: 'Alexia FM Radio 📻', 
@@ -73,7 +64,7 @@ export async function startDiscordBot() {
       });
   });
 
-  // Event Interaction Create
+  // 🛡️ REVISI: STRATEGI FAST DEFER
   client.on(Events.InteractionCreate, async interaction => {
       if (!interaction.isChatInputCommand()) return;
 
@@ -81,13 +72,20 @@ export async function startDiscordBot() {
       if (!command) return;
 
       try {
+          // 🚀 LANGSUNG DEFER DI SINI (Sebelum execute)
+          // Ini memastikan Discord dapet respon dalam < 3 detik
+          await interaction.deferReply();
+
           await command.execute(interaction);
       } catch (error) {
-          console.error(error);
-          if (interaction.replied || interaction.deferred) {
-              await interaction.followUp({ content: 'There was an error executing this command!', flags: ['Ephemeral'] });
+          console.error("❌ Interaction Error:", error);
+          
+          const errorMsg = { content: 'There was an error executing this command!', flags: ['Ephemeral'] };
+          
+          if (interaction.deferred || interaction.replied) {
+              await interaction.followUp(errorMsg).catch(() => {});
           } else {
-              await interaction.reply({ content: 'There was an error executing this command!', flags: ['Ephemeral'] });
+              await interaction.reply(errorMsg).catch(() => {});
           }
       }
   });
@@ -96,9 +94,6 @@ export async function startDiscordBot() {
   return client;
 }
 
-/**
- * 2. FUNGSI AUTOPOST DISCORD
- */
 export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, imageBuffer, channelId }) {
   try {
       const channel = await client.channels.fetch(channelId);
@@ -121,22 +116,15 @@ export async function sendAutoPostEmbed({ client, comment, caption, imageUrl, im
       }
 
       await channel.send(payload);
-
   } catch (error) {
       console.error(`❌ Discord Post Error:`, error.message);
   }
 }
 
-/**
- * 3. UPDATE STATUS BOT (REVISI: Listening to...)
- */
 export async function updateBotPresence(client, track) {
   if (!client.user || !track) return;
-
   try {
     const statusText = `${track.name} by ${track.artist}`;
-    
-    // Gunakan setPresence agar status "Listening to" lebih persisten
     client.user.setPresence({
       activities: [{ 
         name: statusText, 
@@ -144,7 +132,6 @@ export async function updateBotPresence(client, track) {
       }],
       status: 'online',
     });
-
     console.log(`🎧 Presence Updated: Listening to ${statusText}`);
   } catch (error) {
     console.error("❌ Failed to update presence:", error.message);
