@@ -60,40 +60,53 @@ export async function startWhatsAppBot() {
     sock.ev.on('creds.update', saveCreds);
 
     /**
-     * 🛡️ AUTOMATIC CHANNEL REGISTRATION (CEO ONLY)
-     * Responds to !setchannel to save the Group ID into the database.
+     * 🛡️ ADMIN COMMAND HANDLER (CEO ONLY)
+     * !setchannel    -> Save Group ID to DB
+     * !removechannel -> Delete Group ID from DB
      */
     sock.ev.on('messages.upsert', async m => {
         if (m.type !== 'notify') return;
         const msg = m.messages[0];
         
-        // 🌟 REVISI: Hapus filter fromMe agar bot bisa merespon pesan dari nomornya sendiri
         if (!msg.message) return;
 
         const remoteJid = msg.key.remoteJid; 
         const senderJid = msg.key.participant || msg.key.remoteJid; 
         const body = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        // Admin Security: Only authorized number can register
+        // 🔐 ADMIN CREDENTIALS
         const myNumber = "6285163133417"; 
-        
+        const myLID = "123325724512316"; 
+        const isCEO = senderJid.includes(myNumber) || senderJid.includes(myLID);
+
+        // 1. SET CHANNEL
         if (body === '!setchannel') {
-            // Verify if the sender is the authorized CEO (including self-messages)
-            if (!senderJid.includes(myNumber)) {
-                console.warn(`🚫 [Security] Unauthorized !setchannel attempt from: ${senderJid}`);
-                return;
-            }
+            if (!isCEO) return console.warn(`🚫 Unauthorized !setchannel from: ${senderJid}`);
 
             if (remoteJid.endsWith('@g.us')) {
-                // 💾 Save Group ID to Supabase via Keyv
                 await db.set('wa_target_group', remoteJid);
                 console.log(`💾 [Database] WhatsApp target group registered: ${remoteJid}`);
-                
                 await sock.sendMessage(remoteJid, { 
-                    text: `✅ *Alexia Registration Successful*\n\nGroup ID: \`${remoteJid}\` has been registered as the primary channel for daily music updates.` 
+                    text: `✅ *Alexia Registration Successful*\n\nIdentity Verified: *CEO Mode*\nGroup ID: \`${remoteJid}\` is now the official home for updates.` 
                 }, { quoted: msg });
             } else {
-                await sock.sendMessage(remoteJid, { text: `❌ Boss, please use this command inside a Group!` });
+                await sock.sendMessage(remoteJid, { text: `❌ Boss, use this command inside a Group!` });
+            }
+        }
+
+        // 2. REMOVE CHANNEL
+        if (body === '!removechannel') {
+            if (!isCEO) return console.warn(`🚫 Unauthorized !removechannel from: ${senderJid}`);
+
+            const currentChannel = await db.get('wa_target_group');
+            if (currentChannel) {
+                await db.delete('wa_target_group');
+                console.log(`🗑️ [Database] WhatsApp target group removed.`);
+                await sock.sendMessage(remoteJid, { 
+                    text: `🗑️ *Alexia Clean Up*\n\nRegistration removed! Alexia will no longer post daily updates here.` 
+                }, { quoted: msg });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `⚠️ No group was registered in my database, Boss.` });
             }
         }
     });
