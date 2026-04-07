@@ -89,9 +89,9 @@ export async function performAutopost(client) {
         const odesliData = await getOdesliData(initialTrack.url);
         if (!odesliData) return console.error("❌ Failed to fetch Odesli data.");
 
-        // 🌟 FIX: Prioritize YouTube's complete artist list!
+        // 🌟 Metadata Priority: Keep YouTube's complete artist list
         let trackTitle = odesliData.title || initialTrack.name;
-        let trackArtist = initialTrack.artist || odesliData.artist; // 👈 Safe from Odesli's truncation
+        let trackArtist = initialTrack.artist || odesliData.artist; 
         let trackCover = odesliData.imageUrl || initialTrack.image;
 
         // 3. REFINEMENT METADATA (HD Cover & Clean Text)
@@ -143,13 +143,24 @@ export async function performAutopost(client) {
             } catch (e) { console.error("❌ Telegram Error:", e.message); }
         }
 
-        // 🟢 C. WHATSAPP BROADCAST (STATUS)
+        // 🟢 C. WHATSAPP DISTRIBUTION (CEO & REGISTERED GROUP)
         try {
-            const myWaNumber = "6285163133417@s.whatsapp.net"; 
             const waCaption = `${caption}\n\n💬 ${engagementComment}`;
+            
+            // 1. Send to CEO Number (Backup/Log)
+            const myWaNumber = "6285163133417@s.whatsapp.net"; 
             await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
-            console.log("✅ Sent to WhatsApp Status.");
-        } catch (e) { console.error("❌ WA Error:", e.message); }
+
+            // 2. Send to Registered Group from Database (via !setchannel)
+            const registeredGroupId = await db.get('wa_target_group'); 
+            
+            if (registeredGroupId) {
+                await sendWhatsAppPost(registeredGroupId, waCaption, imageBuffer);
+                console.log(`✅ Posted to Registered WA Group: ${registeredGroupId}`);
+            } else {
+                console.warn("⚠️ [WA] No group registered. Use !setchannel in a group first!");
+            }
+        } catch (e) { console.error("❌ WhatsApp Dispatch Error:", e.message); }
 
         // 🟣 D. DISCORD CHANNELS (Subscribers)
         console.log(`📣 Broadcasting to Discord Subscribers...`);

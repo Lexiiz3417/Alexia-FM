@@ -2,9 +2,18 @@
 import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { usePostgresAuthState } from './waAuthState.js'; 
+import Keyv from 'keyv';
+import { KeyvPostgres } from '@keyv/postgres';
 
 export let waSocket = null;
-export let waContacts = []; // Store saved contacts for status broadcast
+
+// Initialize Database connection for WhatsApp settings
+const db = new Keyv({
+    store: new KeyvPostgres({
+        uri: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+    })
+});
 
 export async function startWhatsAppBot() {
     const { state, saveCreds } = await usePostgresAuthState();
@@ -21,6 +30,7 @@ export async function startWhatsAppBot() {
 
     waSocket = sock;
 
+    // Pairing Code logic for the first-time setup
     if (!sock.authState.creds.registered) {
         const phoneNumber = "6285163133417"; 
         
@@ -36,6 +46,7 @@ export async function startWhatsAppBot() {
         }, 5000);
     }
 
+    // Connection update handler
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
@@ -48,41 +59,56 @@ export async function startWhatsAppBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Capture incoming contacts for status viewers
-    sock.ev.on('contacts.upsert', (contacts) => {
-        const newContacts = contacts
-            .map(c => c.id)
-            .filter(id => id && id.endsWith('@s.whatsapp.net'));
+    /**
+     * 🛡️ AUTOMATIC CHANNEL REGISTRATION (CEO ONLY)
+     * Responds to !setchannel to save the Group ID into the database.
+     */
+    sock.ev.on('messages.upsert', async m => {
+        if (m.type !== 'notify') return;
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return;
+
+        const remoteJid = msg.key.remoteJid; 
+        const senderJid = msg.key.participant || msg.key.remoteJid; 
+        const body = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
+
+        // Admin Security: Only authorized number can register
+        const myNumber = "6285163133417"; 
         
-        waContacts = [...new Set([...waContacts, ...newContacts])];
-        console.log(`📇 [Contact Sync] Loaded ${waContacts.length} contacts for status broadcast.`);
+        if (body === '!setchannel') {
+            if (!senderJid.includes(myNumber)) {
+                console.warn(`🚫 [Security] Unauthorized !setchannel attempt from: ${senderJid}`);
+                return;
+            }
+
+            if (remoteJid.endsWith('@g.us')) {
+                // 💾 Save Group ID to Supabase via Keyv
+                await db.set('wa_target_group', remoteJid);
+                console.log(`💾 [Database] WhatsApp target group registered: ${remoteJid}`);
+                
+                await sock.sendMessage(remoteJid, { 
+                    text: `✅ *Alexia Registration Successful*\n\nThis group is now registered as the primary channel for daily music updates.` 
+                }, { quoted: msg });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `❌ Boss, please use this command inside a Group!` });
+            }
+        }
     });
 }
 
 /**
- * 🟢 Send to WhatsApp Status (Broadcast to all loaded contacts)
+ * 🟢 Send WhatsApp Message (Individual or Group)
  */
 export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
     if (!waSocket) return;
     try {
-        const statusJid = 'status@broadcast'; 
-        const botJid = waSocket.user.id.split(':')[0] + '@s.whatsapp.net'; 
-        
-        // Combine target, bot, and all synced contacts without duplicates
-        const viewers = [...new Set([targetJid, botJid, ...waContacts])]; 
-
-        const messageOptions = { 
-            statusJidList: viewers,
-            broadcast: true 
-        };
-
         if (imageBuffer) {
-            await waSocket.sendMessage(statusJid, { image: imageBuffer, caption: text }, messageOptions);
+            await waSocket.sendMessage(targetJid, { image: imageBuffer, caption: text });
         } else {
-            await waSocket.sendMessage(statusJid, { text: text, backgroundColor: '#b8256f' }, messageOptions);
+            await waSocket.sendMessage(targetJid, { text: text });
         }
-        console.log(`🟢 ✅ Successfully posted to WhatsApp Status! Potential viewers: ${viewers.length}`);
+        console.log(`🟢 ✅ Successfully posted to WhatsApp: ${targetJid}`);
     } catch (error) {
-        console.error("❌ Failed to post to WA Status:", error);
+        console.error(`❌ Failed to post to WhatsApp (${targetJid}):`, error);
     }
 }
