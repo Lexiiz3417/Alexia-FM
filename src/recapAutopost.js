@@ -8,8 +8,9 @@ import path from "path";
 import { fileURLToPath } from 'url';
 import { getTopSongs } from "./history.js";
 import { generateRecapImage } from "./recapGenerator.js";
-import { postToMeta } from "./meta.js"; // 🌟 Versi Terpadu (FB, IG, Threads)
+import { postToMeta } from "./meta.js"; 
 import { postToTelegram } from "./telegram.js";
+import { sendWhatsAppPost } from "./whatsapp.js"; // 🌟 IMPORT WA MASUK!
 
 dotenv.config();
 const db = new Keyv();
@@ -17,14 +18,11 @@ const db = new Keyv();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Helper: Ambil template acak dari file .txt
- */
 async function getDynamicRecapText(label, topSong) {
     const title = topSong.title || "Unknown Track";
     const artist = topSong.artist || "Unknown Artist";
     const plays = topSong.play_count || 0;
-    const period = label.toLowerCase(); // weekly, monthly, yearly
+    const period = label.toLowerCase(); 
 
     const tags = "#MusicRecap #TopTracks #AlexiaFM #NowPlaying #ChartTopper #MusicDiscovery";
 
@@ -65,9 +63,6 @@ async function getDynamicRecapText(label, topSong) {
     return { caption: finalCaption, comment: finalComment };
 }
 
-/**
- * Fungsi Utama: Autopost Recap All Platform
- */
 export async function performRecapAutopost(client, period) {
     const cfg = { weekly: [7, 5, 'WEEKLY'], monthly: [30, 7, 'MONTHLY'], yearly: [365, 10, 'YEARLY'] }[period];
     if (!cfg) return false;
@@ -93,14 +88,22 @@ export async function performRecapAutopost(client, period) {
                 console.log(`📡 Sending ${label} Recap to Meta...`);
                 const metaReport = await postToMeta(imgBuffer, caption, comment);
                 console.log(`✅ Meta Recap Results -> FB: ${metaReport.facebook} | IG: ${metaReport.instagram} | Threads: ${metaReport.threads}`);
-            } catch (e) { 
-                console.error("❌ Meta Recap Error:", e.message); 
-            }
+            } catch (e) { console.error("❌ Meta Recap Error:", e.message); }
         }
 
         // --- ✈️ TELEGRAM POSTING ---
         if (process.env.TELEGRAM_BOT_TOKEN) {
             postToTelegram(imgBuffer, caption, comment).catch(console.error);
+        }
+
+        // --- 🟢 WHATSAPP STATUS POSTING ---
+        try {
+            console.log("🟢 Sending Recap to WhatsApp Status...");
+            const myWaNumber = "6285163133417@s.whatsapp.net"; 
+            const waCaption = `${caption}\n\n💬 ${comment}`;
+            await sendWhatsAppPost(myWaNumber, waCaption, imgBuffer);
+        } catch (waError) { 
+            console.error("❌ WA Recap Error:", waError.message); 
         }
 
         // --- 🟣 DISCORD POSTING ---
@@ -114,7 +117,6 @@ export async function performRecapAutopost(client, period) {
             .setTimestamp();
 
         let count = 0;
-        // Gunakan iterator DB untuk kirim ke semua channel langganan
         for await (const [k, v] of db.iterator()) {
             if (k?.startsWith('sub:')) {
                 try {

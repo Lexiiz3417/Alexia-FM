@@ -2,7 +2,7 @@
 
 import dotenv from "dotenv";
 import cron from "node-cron";
-import fetch from "node-fetch"; // 🌟 Import fetch buat ping
+import fetch from "node-fetch"; 
 import { startDiscordBot } from "./discord.js";
 import { keepAlive } from './keep_alive.js';
 import { performAutopost } from './autopost.js';
@@ -22,7 +22,8 @@ if (APP_URL) {
     setInterval(async () => {
         try {
             const res = await fetch(APP_URL);
-            console.log(`📡 [Keep-Alive] Self-pinging ${APP_URL}... Status: ${res.status}`);
+            // 🤫 DIBISUKAN BIAR GAK NYAMPAH DI LOG TERMINAL
+            // console.log(`📡 [Keep-Alive] Self-pinging ${APP_URL}... Status: ${res.status}`);
         } catch (e) {
             console.error("❌ [Keep-Alive] Internal ping failed:", e.message);
         }

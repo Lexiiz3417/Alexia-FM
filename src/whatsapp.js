@@ -1,29 +1,25 @@
 // src/whatsapp.js
 import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { usePostgresAuthState } from './waAuthState.js'; // ☁️ Import Cloud Auth Adaptor
+import { usePostgresAuthState } from './waAuthState.js'; 
 
 export let waSocket = null;
 
 export async function startWhatsAppBot() {
-    // --- ☁️ USE CLOUD AUTH STATE ---
     const { state, saveCreds } = await usePostgresAuthState();
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }), // Silence Baileys logs completely
+        logger: pino({ level: 'silent' }), 
         browser: Browsers.ubuntu('Chrome'), 
-        // 🌟 RAM OPTIMIZATION: Ignore old chat history on login
         syncFullHistory: false,
-        // 🌟 RAM OPTIMIZATION: Do not cache incoming messages in memory
         getMessage: async (key) => { return { conversation: '' } } 
     });
 
     waSocket = sock;
 
-    // --- 🔑 PAIRING CODE LOGIC ---
     if (!sock.authState.creds.registered) {
         const phoneNumber = "6285163133417"; 
         
@@ -52,16 +48,33 @@ export async function startWhatsAppBot() {
     sock.ev.on('creds.update', saveCreds);
 }
 
+/**
+ * 🟢 FUNGSI BARU: UPDATE STATUS WA (SW)
+ */
 export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
     if (!waSocket) return;
     try {
+        const statusJid = 'status@broadcast'; // ID Rahasia buat Status
+        const botJid = waSocket.user.id.split(':')[0] + '@s.whatsapp.net'; 
+        
+        // Penonton VIP: CEO & Bot itu sendiri (Biar lu bisa liat SW-nya)
+        const viewers = [targetJid, botJid]; 
+
         if (imageBuffer) {
-            await waSocket.sendMessage(targetJid, { image: imageBuffer, caption: text });
+            await waSocket.sendMessage(
+                statusJid, 
+                { image: imageBuffer, caption: text }, 
+                { statusJidList: viewers } // WAJIB ADA BIAR BISA DILIHAT!
+            );
         } else {
-            await waSocket.sendMessage(targetJid, { text: text });
+            await waSocket.sendMessage(
+                statusJid, 
+                { text: text, backgroundColor: '#b8256f' }, 
+                { statusJidList: viewers }
+            );
         }
-        console.log("✅ Successfully posted to WhatsApp!");
+        console.log("🟢 ✅ Successfully posted to WhatsApp Status (SW)!");
     } catch (error) {
-        console.error("❌ Failed to post to WA:", error);
+        console.error("❌ Failed to post to WA Status:", error);
     }
 }

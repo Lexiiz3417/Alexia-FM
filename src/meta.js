@@ -42,10 +42,9 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
     if (!ACCESS_TOKEN) return report;
 
     // --- 1. PREPARASI: UPLOAD KE IMGBB DULU ---
-    // Karena IG & Threads gak bisa hidup tanpa URL.
     const publicImageUrl = await uploadToImgBB(imageBuffer);
 
-    // --- 📘 2. FACEBOOK SECTION (Logika Retry & Fallback Lu) ---
+    // --- 📘 2. FACEBOOK SECTION (Logika Retry & Fallback) ---
     if (PAGE_ID) {
         let fbSuccess = false;
         let fbRetries = 3;
@@ -55,7 +54,6 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                 form.append('access_token', ACCESS_TOKEN);
                 form.append('message', caption);
 
-                // Jika Direct Upload gagal atau ini retry, gunakan URL ImgBB
                 if (i > 0 && publicImageUrl) {
                     form.append('url', publicImageUrl);
                 } else {
@@ -71,7 +69,6 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                 if (data.id) {
                     report.facebook = `✅ Success ${i > 0 ? '(via ImgBB)' : '(Direct)'}`;
                     fbSuccess = true;
-                    // Auto Comment di FB
                     if (engagementComment) {
                         await fetch(`https://graph.facebook.com/${API_VERSION}/${data.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
                     }
@@ -84,46 +81,62 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
         }
     }
 
-    // Jika ImgBB gagal, IG & Threads gak bisa lanjut
     if (!publicImageUrl) {
         report.instagram = "❌ ImgBB Failed";
         report.threads = "❌ ImgBB Failed";
         return report;
     }
 
-    // --- 📸 3. INSTAGRAM SECTION ---
+    // --- 📸 3. INSTAGRAM SECTION (SEKARANG PAKE RETRY!) ---
     if (IG_ID) {
-        try {
-            console.log("📸 [Meta] Creating Instagram container...");
-            const cRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media?image_url=${encodeURIComponent(publicImageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
-            const cData = await cRes.json();
-            
-            if (cData.id) {
-                // 1. Publish Gambar
-                const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media_publish?creation_id=${cData.id}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
-                const pData = await pRes.json();
+        let igSuccess = false;
+        let igRetries = 3; // Nyoba 3x kalau gagal
+
+        console.log(`🔗 [ImgBB URL] ${publicImageUrl}`);
+
+        for (let i = 0; i < igRetries; i++) {
+            try {
+                console.log(`📸 [Meta] Creating Instagram container (Attempt ${i + 1})...`);
+                const cRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media?image_url=${encodeURIComponent(publicImageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+                const cData = await cRes.json();
                 
-                if (pData.id) {
-                    report.instagram = "✅ Success";
+                if (cData.id) {
+                    // 1. Publish Gambar
+                    const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media_publish?creation_id=${cData.id}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+                    const pData = await pRes.json();
                     
-                    // 🌟 2. KIRIM ENGAGEMENT COMMENT SEBAGAI FIRST COMMENT!
-                    if (engagementComment) {
-                        try {
-                            await fetch(`https://graph.facebook.com/${API_VERSION}/${pData.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { 
-                                method: 'POST' 
-                            });
-                            console.log("💬 First comment posted on Instagram!");
-                        } catch (commentErr) {
-                            console.error("❌ Failed to post IG comment:", commentErr.message);
+                    if (pData.id) {
+                        report.instagram = `✅ Success ${i > 0 ? '(after retry)' : ''}`;
+                        igSuccess = true;
+                        
+                        // 🌟 2. KIRIM ENGAGEMENT COMMENT SEBAGAI FIRST COMMENT!
+                        if (engagementComment) {
+                            try {
+                                await fetch(`https://graph.facebook.com/${API_VERSION}/${pData.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { 
+                                    method: 'POST' 
+                                });
+                                console.log("💬 First comment posted on Instagram!");
+                            } catch (commentErr) {
+                                console.error("❌ Failed to post IG comment:", commentErr.message);
+                            }
                         }
+                        break; // BERHASIL! Keluar dari loop
+                    } else {
+                        report.instagram = "❌ Publish Failed";
                     }
                 } else {
-                    report.instagram = "❌ Publish Failed";
+                    report.instagram = `❌ Container Error: ${cData.error?.message}`;
                 }
-            } else {
-                report.instagram = `❌ Container Error: ${cData.error?.message}`;
+            } catch (e) { 
+                report.instagram = `❌ Error: ${e.message}`; 
             }
-        } catch (e) { report.instagram = `❌ Error: ${e.message}`; }
+
+            // Kalau gagal, tunggu bentar biar server Meta / ImgBB nafas dulu
+            if (!igSuccess && i < igRetries - 1) {
+                console.warn(`⚠️ [IG Retry] Server Meta belum siap. Menunggu ${(i + 1) * 3} detik...`);
+                await sleep(3000 * (i + 1));
+            }
+        }
     }
 
     // --- 🧵 4. THREADS SECTION ---
