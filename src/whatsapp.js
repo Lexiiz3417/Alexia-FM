@@ -4,6 +4,7 @@ import pino from 'pino';
 import { usePostgresAuthState } from './waAuthState.js'; 
 
 export let waSocket = null;
+export let waContacts = []; 
 
 export async function startWhatsAppBot() {
     const { state, saveCreds } = await usePostgresAuthState();
@@ -46,34 +47,37 @@ export async function startWhatsAppBot() {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('contacts.upsert', (contacts) => {
+        const newContacts = contacts
+            .map(c => c.id)
+            .filter(id => id && id.endsWith('@s.whatsapp.net')); // Cuma ambil nomor HP pribadi
+        
+        // Gabungin kontak baru ke buku telepon tanpa duplikat
+        waContacts = [...new Set([...waContacts, ...newContacts])];
+        console.log(`📇 [Buku Telepon] Berhasil memuat/update ${waContacts.length} kontak untuk penonton SW!`);
+    });
 }
 
-/**
- * 🟢 FUNGSI BARU: UPDATE STATUS WA (SW)
- */
 export async function sendWhatsAppPost(targetJid, text, imageBuffer) {
     if (!waSocket) return;
     try {
-        const statusJid = 'status@broadcast'; // ID Rahasia buat Status
+        const statusJid = 'status@broadcast'; 
         const botJid = waSocket.user.id.split(':')[0] + '@s.whatsapp.net'; 
         
-        // Penonton VIP: CEO & Bot itu sendiri (Biar lu bisa liat SW-nya)
-        const viewers = [targetJid, botJid]; 
+        const viewers = [...new Set([targetJid, botJid, ...waContacts])]; 
+
+        const messageOptions = { 
+            statusJidList: viewers,
+            broadcast: true // WAJIB ADA BIAR JADI STATUS!
+        };
 
         if (imageBuffer) {
-            await waSocket.sendMessage(
-                statusJid, 
-                { image: imageBuffer, caption: text }, 
-                { statusJidList: viewers } // WAJIB ADA BIAR BISA DILIHAT!
-            );
+            await waSocket.sendMessage(statusJid, { image: imageBuffer, caption: text }, messageOptions);
         } else {
-            await waSocket.sendMessage(
-                statusJid, 
-                { text: text, backgroundColor: '#b8256f' }, 
-                { statusJidList: viewers }
-            );
+            await waSocket.sendMessage(statusJid, { text: text, backgroundColor: '#b8256f' }, messageOptions);
         }
-        console.log("🟢 ✅ Successfully posted to WhatsApp Status (SW)!");
+        console.log(`🟢 ✅ Sukses post ke WA Status! Berpotensi dilihat oleh ${viewers.length} kontak.`);
     } catch (error) {
         console.error("❌ Failed to post to WA Status:", error);
     }
