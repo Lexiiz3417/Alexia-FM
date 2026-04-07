@@ -66,7 +66,9 @@ export async function startWhatsAppBot() {
     sock.ev.on('messages.upsert', async m => {
         if (m.type !== 'notify') return;
         const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        
+        // 🌟 REVISI: Hapus filter fromMe agar bot bisa merespon pesan dari nomornya sendiri
+        if (!msg.message) return;
 
         const remoteJid = msg.key.remoteJid; 
         const senderJid = msg.key.participant || msg.key.remoteJid; 
@@ -76,6 +78,7 @@ export async function startWhatsAppBot() {
         const myNumber = "6285163133417"; 
         
         if (body === '!setchannel') {
+            // Verify if the sender is the authorized CEO (including self-messages)
             if (!senderJid.includes(myNumber)) {
                 console.warn(`🚫 [Security] Unauthorized !setchannel attempt from: ${senderJid}`);
                 return;
@@ -87,7 +90,7 @@ export async function startWhatsAppBot() {
                 console.log(`💾 [Database] WhatsApp target group registered: ${remoteJid}`);
                 
                 await sock.sendMessage(remoteJid, { 
-                    text: `✅ *Alexia Registration Successful*\n\nThis group is now registered as the primary channel for daily music updates.` 
+                    text: `✅ *Alexia Registration Successful*\n\nGroup ID: \`${remoteJid}\` has been registered as the primary channel for daily music updates.` 
                 }, { quoted: msg });
             } else {
                 await sock.sendMessage(remoteJid, { text: `❌ Boss, please use this command inside a Group!` });
