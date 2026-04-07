@@ -1,6 +1,9 @@
 // src/coverFinder.js
 import fetch from 'node-fetch';
 
+/**
+ * Clean up title and artist tags to improve API search matching.
+ */
 export function cleanMetadata(rawTitle, rawArtist) {
     let title = rawTitle || "";
     let artist = rawArtist || "";
@@ -60,6 +63,9 @@ function verifyMatch(inputTitle, inputArtist, resultTitle, resultArtist) {
     return titleMatch && artistMatch;
 }
 
+/**
+ * Find track information and an HD cover from Deezer/iTunes.
+ */
 export async function getTrackInfo(rawTitle, rawArtist) {
     const { cleanTitle, cleanArtist } = cleanMetadata(rawTitle, rawArtist);
 
@@ -69,7 +75,12 @@ export async function getTrackInfo(rawTitle, rawArtist) {
         return null;
     }
 
-    const searchQuery = encodeURIComponent(`${cleanTitle} ${cleanArtist}`.trim());
+    // 🌟 SMART SEARCH: Extract only the primary artist for the API query
+    // Example: "Dabin, Said The Sky, Clara Mae" -> "Dabin"
+    // This prevents Deezer/iTunes search engine from choking on long queries.
+    const primaryArtist = cleanArtist.split(',')[0].split('&')[0].trim();
+    
+    const searchQuery = encodeURIComponent(`${cleanTitle} ${primaryArtist}`.trim());
 
     // --- LAYER 1: DEEZER ---
     try {
@@ -78,13 +89,14 @@ export async function getTrackInfo(rawTitle, rawArtist) {
         const data = await res.json();
 
         if (data.data && data.data.length > 0) {
+            // Verify using the FULL cleanArtist to ensure accuracy
             const validTrack = data.data.find(t => verifyMatch(cleanTitle, cleanArtist, t.title, t.artist.name));
             
             if (validTrack) {
-                // 🌟 FIX: Return the original clean metadata, ONLY borrow the cover URL!
+                // 🌟 Return original metadata, ONLY borrow the cover URL!
                 return {
                     title: cleanTitle,
-                    artist: cleanArtist,
+                    artist: cleanArtist, 
                     coverUrl: validTrack.album.cover_xl 
                 };
             } else {
@@ -102,12 +114,13 @@ export async function getTrackInfo(rawTitle, rawArtist) {
         const data = await res.json();
 
         if (data.results && data.results.length > 0) {
+            // Verify using the FULL cleanArtist to ensure accuracy
             const validTrack = data.results.find(t => verifyMatch(cleanTitle, cleanArtist, t.trackName, t.artistName));
             if (validTrack) {
-                // 🌟 FIX: Return the original clean metadata, ONLY borrow the cover URL!
+                // 🌟 Return original metadata, ONLY borrow the cover URL!
                 return {
                     title: cleanTitle,
-                    artist: cleanArtist,
+                    artist: cleanArtist, 
                     coverUrl: validTrack.artworkUrl100.replace('100x100bb', '1000x1000bb') 
                 };
             }
