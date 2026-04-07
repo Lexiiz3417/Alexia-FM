@@ -20,35 +20,48 @@ export const getPlaylistTracks = async () => {
 
     console.log(`Fetching playlist: ${playlistId}...`);
 
-    // Fetch initial batch (usually ~100 tracks)
-    const playlist = await yt.getPlaylist(playlistId);
+    // 🌟 UPGRADE: Use YT Music endpoint instead of standard YT
+    const playlist = await yt.music.getPlaylist(playlistId);
 
-    // Collect all videos (handle pagination)
-    let allVideos = [...playlist.videos];
+    // In YT Music API, track lists are typically in .items (fallback to .videos)
+    let allVideos = playlist.items || playlist.videos || [];
     let currentPlaylist = playlist;
 
     while (currentPlaylist.has_continuation) {
       console.log(`... Fetching more tracks (${allVideos.length})`);
       currentPlaylist = await currentPlaylist.getContinuation();
-      allVideos.push(...currentPlaylist.videos);
+      const moreVideos = currentPlaylist.items || currentPlaylist.videos || [];
+      allVideos.push(...moreVideos);
     }
 
     console.log(`✅ Total videos found: ${allVideos.length}`);
 
     const tracks = allVideos.map(item => {
-      // Select highest-resolution thumbnail (fallback if missing)
       const thumbnails = item.thumbnails || [];
       const bestThumbnail =
         thumbnails.length > 0
           ? thumbnails.sort((a, b) => b.width - a.width)[0]
           : { url: '' };
 
-      // Normalize artist name
-      const artistName = item.author ? item.author.name : 'Unknown Artist';
+      // 🌟 CAPTURE ALL COLLABORATING ARTISTS
+      let artistName = 'Unknown Artist';
+      
+      if (item.artists && Array.isArray(item.artists) && item.artists.length > 0) {
+          // Map all artist names and join them with commas
+          artistName = item.artists.map(a => a.name).join(', ');
+      } else if (item.authors && Array.isArray(item.authors) && item.authors.length > 0) {
+          // Alternative API format
+          artistName = item.authors.map(a => a.name).join(', ');
+      } else if (item.author) {
+          // Emergency fallback to Channel name
+          artistName = item.author.name || item.author;
+      }
+
       const cleanArtistName = artistName.replace(/ - Topic$/, '').trim();
+      const rawTitle = item.title?.text || item.title || 'Unknown Title';
 
       return {
-        name: item.title.text || item.title,
+        name: rawTitle,
         artist: cleanArtistName,
         url: `https://music.youtube.com/watch?v=${item.id}`,
         image: bestThumbnail.url,
