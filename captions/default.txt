@@ -1,88 +1,68 @@
-Another day, another song to listen to! 🎵
-Here is "{title}" by {artist}.
+Another day, another banger! 🎵
+Check out "{title}" by {artist}.
 
+👤 Full Credits: {full_artist}
 🔗 Listen here: {link}
 
 {tags}
 ---
 Time for your daily music fix! 🎧
-Check out "{title}" by {artist}.
-I think you're going to like this one.
+I think you're going to love what {full_artist} cooked up on this one.
 
+🎵 Title: {title}
 🔗 Stream: {link}
 
 {tags}
 ---
-✨ Today's Pick:
-"{title}" – {artist}
+✨ Today's Pick: {title} – {artist}
+Give it a listen and let me know what you think of this collab by {full_artist}! 👇
 
-Give it a listen and let me know what you think! 👇
 {link}
-
 {tags}
 ---
 Adding some flavor to your playlist 🎶
-Now playing: "{title}" by {artist}
+Now playing: "{title}"
+Brought to you by {full_artist}.
 
 🔗 Link: {link}
-
 {tags}
 ---
 Just vibe with this one... 🌊
 🎵 {title}
-👤 {artist}
+👤 Featuring: {full_artist}
 
 🔗 Listen now: {link}
-
 {tags}
 ---
-Day #{day} of serving you good music! 📻
-Don't sleep on this track from {artist}. 
+Day #{day} | Don't sleep on this track from {artist}! 📻
+The production on this one by {full_artist} is top-tier.
 
-Hit play on "{title}" right here:
+Hit play right here:
 🔗 {link}
-
 {tags}
 ---
 Need a mood boost? I've got you covered. ✨
 Turn the volume up for "{title}" by {artist}.
 
+(Full artist lineup: {full_artist})
 🔗 Tune in: {link}
-
 {tags}
 ---
 Handpicked for your daily rotation 💿
-You are listening to "{title}" by the one and only {artist}.
+You are listening to "{title}" by {artist} and the rest of the talented crew: {full_artist}.
 
 🔗 Stream it now: {link}
-
 {tags}
 ---
 Alexia FM is live! 🎙️
-Up next on our daily radar is a solid track from {artist}. 
+Up next on our daily radar is this solid track:
+"{title}" – {full_artist}
 
-🎵 "{title}"
 🔗 {link}
-
 {tags}
 ---
 Straight fire today. 🔥
-If you haven't heard "{title}" by {artist} yet, you're missing out!
+If you haven't heard what {full_artist} did on "{title}" yet, you're missing out!
 
 🔗 Check it out: {link}
-
-{tags}
----
-Perfect background noise or main event? You decide. 🎧
-Now spinning: {artist} - "{title}".
-
-🔗 Listen here: {link}
-
-{tags}
----
-Looking for something new to listen to? 👀
-Day #{day} brings us this absolute gem: "{title}" by {artist}.
-
-🔗 Dive in: {link}
-
 {tags}

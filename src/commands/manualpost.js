@@ -40,7 +40,7 @@ const data = new SlashCommandBuilder()
                 { name: '🌐 All Platforms', value: 'all' },
                 { name: '📸 Meta Ecosystem (FB, IG, Threads)', value: 'meta' },
                 { name: '📱 Instagram Only', value: 'ig_only' },
-                { name: '📘 Facebook Only', value: 'fb_only' }, // 🌟 OPSI FB ONLY DITAMBAHKAN
+                { name: '📘 Facebook Only', value: 'fb_only' },
                 { name: '✈️ Telegram Channel', value: 'telegram' },
                 { name: '👾 Discord Server', value: 'discord' },
                 { name: '🟢 WhatsApp Broadcast', value: 'whatsapp' } 
@@ -67,11 +67,14 @@ async function execute(interaction) {
         const odesliData = await getOdesliData(url);
         if (!odesliData) return interaction.editReply("❌ Failed to retrieve song metadata.");
 
+        // 🌟 Capture the original full artist list for the caption footer
+        const fullArtist = odesliData.artist;
+
         let trackTitle = odesliData.title;
-        let trackArtist = odesliData.artist;
+        let trackArtist = fullArtist; // Default to full until refined
         let trackCover = odesliData.imageUrl;
 
-        // Refine metadata with high-res cover and clean text
+        // 🌟 Refine metadata (Trimming to Main Artist for the Canvas/Image UI)
         const hdInfo = await getTrackInfo(trackTitle, trackArtist);
         if (hdInfo) {
             trackTitle = hdInfo.title || trackTitle;
@@ -83,18 +86,19 @@ async function execute(interaction) {
             trackArtist = cleaned.cleanArtist || trackArtist;
         }
 
-        // Render Canvas Image
+        // Render Canvas Image using refined (Short) artist
         const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
         const imageBuffer = await generateNowPlayingImage(songObj, day);
         if (!imageBuffer) return interaction.editReply("❌ Failed to render canvas image.");
 
         logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'manualpost', trackCover);
 
-        // Prepare Caption and Random Engagement Comment
+        // 🌟 Prepare Caption using both Narration Artist (Short) and Credit Artist (Full)
         const caption = await generateCaption({
             day: day,
             title: trackTitle,
             artist: trackArtist,
+            full_artist: fullArtist,
             link: odesliData.pageUrl
         });
         const engagementComment = await getRandomComment(trackTitle, trackArtist);
@@ -106,10 +110,9 @@ async function execute(interaction) {
 
         // --- 🚀 DISPATCH LOGIC ---
 
-        // Dispatch: Meta Ecosystem / IG Only / FB Only
-        if (target === 'all' || target === 'meta' || target === 'ig_only' || target === 'fb_only') { // 🌟 UPDATE KONDISI FB ONLY
+        // Dispatch: Meta Ecosystem (FB, IG, Threads)
+        if (['all', 'meta', 'ig_only', 'fb_only'].includes(target)) {
             if (process.env.META_ACCESS_TOKEN) {
-                // 🌟 LEMPAR VARIABLE TARGET KE postToMeta
                 const report = await postToMeta(imageBuffer, caption, engagementComment, target);
                 metaStatus = `FB: ${report.facebook}\nIG: ${report.instagram}\nThreads: ${report.threads}`;
             } else metaStatus = "⚠️ **No Config**";
@@ -125,16 +128,13 @@ async function execute(interaction) {
             } else teleStatus = "⚠️ **No Config**";
         }
 
-        // Dispatch: WhatsApp (Sync with registered group)
+        // Dispatch: WhatsApp
         if (target === 'all' || target === 'whatsapp') {
             try {
                 const waCaption = `${caption}\n\n💬 ${engagementComment}`;
                 const myWaNumber = "6285163133417@s.whatsapp.net";
-                
-                // Direct Message to CEO
                 await sendWhatsAppPost(myWaNumber, waCaption, imageBuffer);
 
-                // Registered Group Broadcast
                 const registeredGroupId = await db.get('wa_target_group');
                 if (registeredGroupId) {
                     await sendWhatsAppPost(registeredGroupId, waCaption, imageBuffer);
@@ -145,7 +145,7 @@ async function execute(interaction) {
             } catch (e) { waStatus = `❌ **Error:** ${e.message}`; }
         }
 
-        // Dispatch: Discord Local Channel
+        // Dispatch: Discord
         if (target === 'all' || target === 'discord') {
             try {
                 const attachment = new AttachmentBuilder(imageBuffer, { name: 'music-card.png' });
@@ -163,7 +163,7 @@ async function execute(interaction) {
             } catch (e) { discordStatus = "❌ **Failed**"; }
         }
 
-        // Send Final Report Embed
+        // Final Report Embed
         const reportEmbed = new EmbedBuilder()
             .setColor('#b8256f')
             .setAuthor({ name: 'Manual Post Override', iconURL: interaction.client.user.displayAvatarURL() })
@@ -185,7 +185,7 @@ async function execute(interaction) {
         await interaction.editReply({ embeds: [reportEmbed] });
 
     } catch (error) {
-        console.error("❌ Manual Post Error:", error);
+        console.error("❌ [ManualPost] Logic Error:", error);
         await interaction.editReply("❌ Fatal error during manual post processing.").catch(() => {});
     }
 }

@@ -37,7 +37,7 @@ export default {
                     { name: '🚀 All Platforms', value: 'all' },
                     { name: '📸 Meta Ecosystem (FB, IG, Threads)', value: 'meta' },
                     { name: '📱 Instagram Only', value: 'ig_only' },
-                    { name: '📘 Facebook Only', value: 'fb_only' }, // 🌟 OPSI FB ONLY
+                    { name: '📘 Facebook Only', value: 'fb_only' },
                     { name: '✈️ Telegram Only', value: 'telegram' }, 
                     { name: '👾 Discord Only', value: 'discord' },
                     { name: '🟢 WhatsApp Only', value: 'whatsapp' } 
@@ -45,14 +45,12 @@ export default {
         ),
 
     async execute(interaction) {
-        // 🔒 Security Check (Fast)
+        // 🔒 Security Check
         if (interaction.user.id !== process.env.OWNER_ID) {
             return interaction.editReply({ 
                 content: '⛔ **Access Denied.** This command is restricted to the bot owner.', 
             });
         }
-
-        // NOTE: No deferReply() here. It's already handled globally in src/discord.js
 
         try {
             const target = interaction.options.getString('target') || 'all'; 
@@ -64,10 +62,14 @@ export default {
             const odesliData = await getOdesliData(initialTrack.url);
             if (!odesliData) return interaction.editReply({ content: '❌ Failed to fetch Odesli metadata.' });
             
+            // 🌟 Capture the original full artist list from YouTube/Odesli
+            const fullArtist = initialTrack.artist || odesliData.artist;
+
             let trackTitle = odesliData.title || initialTrack.name;
-            let trackArtist = initialTrack.artist || odesliData.artist; 
+            let trackArtist = fullArtist; // Default to full until refined
             let trackCover = odesliData.imageUrl || initialTrack.image;
 
+            // 🌟 Refine metadata (Trimming to Main Artist for the Canvas/Image)
             const hdInfo = await getTrackInfo(trackTitle, trackArtist);
             if (hdInfo) {
                 trackTitle = hdInfo.title || trackTitle;
@@ -84,13 +86,21 @@ export default {
             const START_DATE = new Date(process.env.START_DATE || "2026-01-23");
             const dayNumber = Math.floor(Math.abs(new Date() - START_DATE) / (1000 * 60 * 60 * 24)) + 1;
 
+            // Generate Image using the refined (Short) artist name for better UI
             const songObj = { title: trackTitle, artist: trackArtist, coverUrl: trackCover };
             const imageBuffer = await generateNowPlayingImage(songObj, `TEST DAY #${dayNumber}`);
             if (!imageBuffer) return interaction.editReply({ content: '❌ Image generation failed.' });
 
             logPlayHistory(trackTitle, trackArtist, interaction.user.id, 'testpost', trackCover);
 
-            const caption = await generateCaption({ day: dayNumber, title: trackTitle, artist: trackArtist, link: odesliData.pageUrl });
+            // 🌟 Generate Caption with both Main Artist and Full Artist credit
+            const caption = await generateCaption({ 
+                day: dayNumber, 
+                title: trackTitle, 
+                artist: trackArtist, 
+                full_artist: fullArtist,
+                link: odesliData.pageUrl 
+            });
             const engagementComment = await getRandomComment(trackTitle, trackArtist);
 
             let metaStatus = "⚪ *Skipped*";
@@ -100,8 +110,8 @@ export default {
 
             // --- 🚀 DISPATCH LOGIC ---
 
-            // Dispatch: Meta Ecosystem / IG Only / FB Only
-            if (target === 'all' || target === 'meta' || target === 'ig_only' || target === 'fb_only') { // 🌟 UPDATE KONDISI FB ONLY
+            // Dispatch: Meta Ecosystem (FB, IG, Threads)
+            if (['all', 'meta', 'ig_only', 'fb_only'].includes(target)) {
                 if (process.env.META_ACCESS_TOKEN) {
                     const report = await postToMeta(imageBuffer, caption, engagementComment, target);
                     metaStatus = `FB: ${report.facebook}\nIG: ${report.instagram}\nThreads: ${report.threads}`;
@@ -161,13 +171,13 @@ export default {
                     { name: '🟢 WhatsApp', value: waStatus, inline: true }
                 )
                 .setThumbnail(trackCover)
-                .setFooter({ text: `Testing Mode • Target: ${target}` })
+                .setFooter({ text: `Target: ${target} • All Credits Synchronized` })
                 .setTimestamp();
             
             await interaction.editReply({ embeds: [reportEmbed] });
 
         } catch (error) {
-            console.error("❌ TestPost Logic Error:", error);
+            console.error("❌ [TestPost] Logic Error:", error);
             await interaction.editReply({ content: '❌ **Simulation Failed:** Check logs.' }).catch(() => {});
         }
     }
