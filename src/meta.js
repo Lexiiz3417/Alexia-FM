@@ -102,7 +102,7 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "", t
         for (let i = 0; i < igRetries; i++) {
             try {
                 console.log(`📸 [Meta] Creating Instagram container (Attempt ${i + 1})...`);
-                const cRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media?image_url=${encodeURIComponent(publicImageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
+                const cRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media?image_url=${encodeURIComponent(publicImageUrl)}&media_type=IMAGE&caption=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
                 const cData = await cRes.json();
                 
                 if (cData.id) {
