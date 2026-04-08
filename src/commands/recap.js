@@ -5,7 +5,7 @@ import { getTopSongs } from '../history.js';
 import { generateRecapImage } from '../recapGenerator.js';
 import Keyv from 'keyv';
 
-// Inisialisasi database cooldown
+// Initialize Cooldown Database
 const db = new Keyv({ namespace: 'cooldown_recap' });
 
 export default {
@@ -24,10 +24,10 @@ export default {
 
     async execute(interaction) {
         const userId = interaction.user.id;
-        
-        // Ambil OWNER_ID dari Environment Variables (.env)
         const OWNER_ID = process.env.OWNER_ID;
         const isOwner = userId === OWNER_ID;
+
+        // NOTE: deferReply() is handled globally in src/discord.js to avoid "InteractionAlreadyReplied" errors.
 
         // --- ⏳ COOLDOWN LOGIC (Bypassed for Owner) ---
         if (!isOwner) {
@@ -39,16 +39,13 @@ export default {
                 const expirationTime = lastUsed + cooldownAmount;
                 if (now < expirationTime) {
                     const timeLeft = (expirationTime - now) / (60 * 60 * 1000);
-                    return interaction.reply({ 
+                    return interaction.editReply({ 
                         content: `⏳ **Slow down!** You've already generated a recap today. Please try again in **${timeLeft.toFixed(1)} hours**.`, 
                         ephemeral: true 
                     });
                 }
             }
         }
-
-        // Defer reply karena rendering butuh waktu
-        await interaction.deferReply();
 
         const period = interaction.options.getString('period');
         let days = 7;
@@ -66,44 +63,44 @@ export default {
         }
 
         try {
-            // 1. Ambil data history
+            // 1. Fetch historical data from Supabase/Postgres
             const songs = await getTopSongs(days, limit);
 
             if (!songs || songs.length === 0) {
                 return interaction.editReply(`❌ No music history found for the **${titleLabel}** period. Start playing some tunes first!`);
             }
 
-            // 2. Generate gambar recap pake Canvas + Local Font
+            // 2. Render Recap Image using Canvas
             const imageBuffer = await generateRecapImage(titleLabel, songs);
 
             if (!imageBuffer) {
                 return interaction.editReply("❌ Failed to generate the recap image.");
             }
 
-            // 3. Set cooldown (Hanya untuk user biasa)
+            // 3. Set Cooldown (Standard Users Only)
             if (!isOwner) {
                 await db.set(userId, Date.now());
             }
 
-            // 4. Siapkan attachment dan embed
+            // 4. Prepare Attachment and Embed
             const attachment = new AttachmentBuilder(imageBuffer, { name: 'alexia-recap.png' });
             
             const embed = new EmbedBuilder()
                 .setColor('#FFD700') // Yellow Gold
                 .setTitle(`📊 Alexia ${titleLabel} Wrapped`)
-                .setDescription(`Here are the most played tracks in this server!`)
+                .setDescription(`Check out the most played tracks in this server!`)
                 .setImage('attachment://alexia-recap.png')
                 .setFooter({ text: isOwner ? 'Owner Mode: Unlimited Access' : 'Limit: 1 recap per day' })
                 .setTimestamp();
 
-            // Kirim hasil akhir
+            // Send Final Response
             await interaction.editReply({
                 embeds: [embed],
                 files: [attachment]
             });
 
         } catch (error) {
-            console.error("❌ Recap Command Error:", error);
+            console.error("❌ [Recap Command] Logic Error:", error);
             await interaction.editReply("❌ An error occurred while retrieving data or rendering the image.");
         }
     }
