@@ -38,7 +38,8 @@ const data = new SlashCommandBuilder()
             .setRequired(false) 
             .addChoices(
                 { name: '🌐 All Platforms', value: 'all' },
-                { name: '📸 Meta Ecosystem', value: 'meta' },
+                { name: '📸 Meta Ecosystem (FB, IG, Threads)', value: 'meta' },
+                { name: '📱 Instagram Only', value: 'ig_only' }, // 🌟 OPSI BARU DITAMBAHKAN
                 { name: '✈️ Telegram Channel', value: 'telegram' },
                 { name: '👾 Discord Server', value: 'discord' },
                 { name: '🟢 WhatsApp Broadcast', value: 'whatsapp' } 
@@ -51,7 +52,6 @@ async function execute(interaction) {
     if (interaction.user.id !== OWNER_ID) {
         return interaction.editReply({ 
             content: '⛔ **Access Denied.** This command is restricted to the bot owner.', 
-            flags: ['Ephemeral'] 
         });
     }
 
@@ -103,10 +103,13 @@ async function execute(interaction) {
         let discordStatus = "⚪ *Skipped*";
         let waStatus = "⚪ *Skipped*";
 
-        // Dispatch: Meta Ecosystem
-        if (target === 'all' || target === 'meta') {
+        // --- 🚀 DISPATCH LOGIC ---
+
+        // Dispatch: Meta Ecosystem / IG Only
+        if (target === 'all' || target === 'meta' || target === 'ig_only') { // 🌟 UPDATE KONDISI
             if (process.env.META_ACCESS_TOKEN) {
-                const report = await postToMeta(imageBuffer, caption, engagementComment);
+                // 🌟 LEMPAR VARIABLE TARGET KE postToMeta
+                const report = await postToMeta(imageBuffer, caption, engagementComment, target);
                 metaStatus = `FB: ${report.facebook}\nIG: ${report.instagram}\nThreads: ${report.threads}`;
             } else metaStatus = "⚠️ **No Config**";
         }
@@ -175,7 +178,7 @@ async function execute(interaction) {
                   inline: false 
                 }
             )
-            .setFooter({ text: `Manual Log Recorded • Executor: ${interaction.user.username}` })
+            .setFooter({ text: `Manual Log Recorded • Target: ${target}` })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [reportEmbed] });

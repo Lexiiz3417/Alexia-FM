@@ -5,15 +5,15 @@ import FormData from 'form-data';
 const PAGE_ID = process.env.FACEBOOK_PAGE_ID;
 const IG_ID = process.env.IG_BUSINESS_ID;
 const THREADS_ID = process.env.THREADS_USER_ID;
-const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN; // Satu token untuk semua
+const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN; 
 const API_VERSION = process.env.META_API_VERSION || 'v19.0';
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * 📦 FUNGSI UPLOAD KE IMGBB
- * Wajib untuk IG & Threads, Opsional (Fallback) untuk FB.
+ * 📦 IMGBB UPLOAD FUNCTION
+ * Required for IG & Threads, serves as a fallback for Facebook.
  */
 async function uploadToImgBB(imageBuffer) {
     if (!IMGBB_API_KEY) return null;
@@ -35,17 +35,21 @@ async function uploadToImgBB(imageBuffer) {
 }
 
 /**
- * 🚀 FUNGSI SAKTI: POST KE META ECOSYSTEM (FB, IG, THREADS)
+ * 🚀 MAIN META ECOSYSTEM DISPATCHER
+ * @param {Buffer} imageBuffer - The rendered 2K image.
+ * @param {String} caption - The main post text.
+ * @param {String} engagementComment - The first comment text.
+ * @param {String} targetMode - 'all', 'meta', or 'ig_only'.
  */
-export async function postToMeta(imageBuffer, caption, engagementComment = "") {
+export async function postToMeta(imageBuffer, caption, engagementComment = "", targetMode = 'all') {
     let report = { facebook: "⚪ Skipped", instagram: "⚪ Skipped", threads: "⚪ Skipped" };
     if (!ACCESS_TOKEN) return report;
 
-    // --- 1. PREPARASI: UPLOAD KE IMGBB DULU ---
+    // --- 1. PREPARATION: UPLOAD TO IMGBB ---
     const publicImageUrl = await uploadToImgBB(imageBuffer);
 
-    // --- 📘 2. FACEBOOK SECTION (Logika Retry & Fallback) ---
-    if (PAGE_ID) {
+    // --- 📘 2. FACEBOOK SECTION (Skip if target is ig_only) ---
+    if (PAGE_ID && targetMode !== 'ig_only') {
         let fbSuccess = false;
         let fbRetries = 3;
         for (let i = 0; i < fbRetries; i++) {
@@ -69,6 +73,7 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                 if (data.id) {
                     report.facebook = `✅ Success ${i > 0 ? '(via ImgBB)' : '(Direct)'}`;
                     fbSuccess = true;
+                    // First Comment Logic for FB
                     if (engagementComment) {
                         await fetch(`https://graph.facebook.com/${API_VERSION}/${data.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
                     }
@@ -87,10 +92,10 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
         return report;
     }
 
-    // --- 📸 3. INSTAGRAM SECTION (SEKARANG PAKE RETRY!) ---
-    if (IG_ID) {
+    // --- 📸 3. INSTAGRAM SECTION (Always runs for 'all', 'meta', and 'ig_only') ---
+    if (IG_ID && (targetMode === 'all' || targetMode === 'meta' || targetMode === 'ig_only')) {
         let igSuccess = false;
-        let igRetries = 3; // Nyoba 3x kalau gagal
+        let igRetries = 3; 
 
         console.log(`🔗 [ImgBB URL] ${publicImageUrl}`);
 
@@ -101,7 +106,7 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                 const cData = await cRes.json();
                 
                 if (cData.id) {
-                    // 1. Publish Gambar
+                    // 1. Publish the Image Container
                     const pRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${IG_ID}/media_publish?creation_id=${cData.id}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
                     const pData = await pRes.json();
                     
@@ -109,7 +114,7 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                         report.instagram = `✅ Success ${i > 0 ? '(after retry)' : ''}`;
                         igSuccess = true;
                         
-                        // 🌟 2. KIRIM ENGAGEMENT COMMENT SEBAGAI FIRST COMMENT!
+                        // 2. Post First Engagement Comment
                         if (engagementComment) {
                             try {
                                 await fetch(`https://graph.facebook.com/${API_VERSION}/${pData.id}/comments?message=${encodeURIComponent(engagementComment)}&access_token=${ACCESS_TOKEN}`, { 
@@ -120,7 +125,7 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                                 console.error("❌ Failed to post IG comment:", commentErr.message);
                             }
                         }
-                        break; // BERHASIL! Keluar dari loop
+                        break; 
                     } else {
                         report.instagram = "❌ Publish Failed";
                     }
@@ -131,16 +136,16 @@ export async function postToMeta(imageBuffer, caption, engagementComment = "") {
                 report.instagram = `❌ Error: ${e.message}`; 
             }
 
-            // Kalau gagal, tunggu bentar biar server Meta / ImgBB nafas dulu
+            // Await before next retry to allow Meta servers to fetch from ImgBB
             if (!igSuccess && i < igRetries - 1) {
-                console.warn(`⚠️ [IG Retry] Server Meta belum siap. Menunggu ${(i + 1) * 3} detik...`);
+                console.warn(`⚠️ [IG Retry] Meta server not ready. Waiting ${(i + 1) * 3} seconds...`);
                 await sleep(3000 * (i + 1));
             }
         }
     }
 
-    // --- 🧵 4. THREADS SECTION ---
-    if (THREADS_ID) {
+    // --- 🧵 4. THREADS SECTION (Skip if target is ig_only) ---
+    if (THREADS_ID && targetMode !== 'ig_only') {
         try {
             const tRes = await fetch(`https://graph.threads.net/v1.0/${THREADS_ID}/threads?media_type=IMAGE&image_url=${encodeURIComponent(publicImageUrl)}&text=${encodeURIComponent(caption)}&access_token=${ACCESS_TOKEN}`, { method: 'POST' });
             const tData = await tRes.json();
