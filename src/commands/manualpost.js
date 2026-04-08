@@ -39,7 +39,8 @@ const data = new SlashCommandBuilder()
             .addChoices(
                 { name: '🌐 All Platforms', value: 'all' },
                 { name: '📸 Meta Ecosystem (FB, IG, Threads)', value: 'meta' },
-                { name: '📱 Instagram Only', value: 'ig_only' }, // 🌟 OPSI BARU DITAMBAHKAN
+                { name: '📱 Instagram Only', value: 'ig_only' },
+                { name: '📘 Facebook Only', value: 'fb_only' }, // 🌟 OPSI FB ONLY DITAMBAHKAN
                 { name: '✈️ Telegram Channel', value: 'telegram' },
                 { name: '👾 Discord Server', value: 'discord' },
                 { name: '🟢 WhatsApp Broadcast', value: 'whatsapp' } 
@@ -105,8 +106,8 @@ async function execute(interaction) {
 
         // --- 🚀 DISPATCH LOGIC ---
 
-        // Dispatch: Meta Ecosystem / IG Only
-        if (target === 'all' || target === 'meta' || target === 'ig_only') { // 🌟 UPDATE KONDISI
+        // Dispatch: Meta Ecosystem / IG Only / FB Only
+        if (target === 'all' || target === 'meta' || target === 'ig_only' || target === 'fb_only') { // 🌟 UPDATE KONDISI FB ONLY
             if (process.env.META_ACCESS_TOKEN) {
                 // 🌟 LEMPAR VARIABLE TARGET KE postToMeta
                 const report = await postToMeta(imageBuffer, caption, engagementComment, target);
