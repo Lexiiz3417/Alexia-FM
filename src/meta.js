@@ -23,7 +23,8 @@ async function uploadToImageHost(imageBuffer) {
 
         const res = await fetch('https://catbox.moe/user/api.php', {
             method: 'POST',
-            body: form
+            body: form,
+            headers: form.getHeaders() // 🌟 KUNCI FIX: Biar form-data dibaca sesuai spek oleh server Catbox
         });
         
         const url = await res.text();
